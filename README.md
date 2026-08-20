@@ -77,8 +77,8 @@ ICE WORKS 将后数字极简主义、编辑式排版和生成艺术结合在一�
 环境要求：**Node.js 20 或更高版本**。
 
 ```bash
-git clone https://github.com/MegD1/ice-works.git
-cd ice-works
+git clone https://github.com/MegD1/Ice-works-showcase.git
+cd Ice-works-showcase
 npm install
 npm run dev
 ```
