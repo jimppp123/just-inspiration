@@ -10,6 +10,32 @@ ICE WORKS 将后数字极简主义、编辑式排版和有机交互组合为三�
 
 当前主画面已接入 `HYPERD4ZE / DESIGN` 公开画板，并将最新 25 条收藏处理为本地 WebP；页面随后按 Pinterest 游标继续同步公开返回的后续收藏。
 
+## 界面预览
+
+### 液态画廊
+
+图片在同一个 WebGL 场中循环、弯曲并相互拉丝，可通过滚轮、拖拽、触屏和方向键切换。
+
+![首页液态画廊与边缘玻璃折射](docs/preview-home.jpg)
+
+### 画板切换
+
+玻璃菜单用于切换、添加或打开 Pinterest 公开画板。
+
+![悬浮于画廊上方的画板切换菜单](docs/preview-board-menu.jpg)
+
+### 灵感墙
+
+完整收藏按原始纵横比组成高密度瀑布流，静态图片保留液态悬停与边缘折射。
+
+![保持原始图片比例的瀑布流灵感墙](docs/preview-shelf.jpg)
+
+### 液态裂变
+
+点击中心图片可逐张展开关联灵感，继续点击分支即可沿 Pinterest 推荐流探索。
+
+![由中心图片裂变出的关联灵感](docs/preview-focus.jpg)
+
 ## Pinterest 画板
 
 点击右上角当前画板名称可打开画板列表。粘贴 `https://www.pinterest.com/用户名/画板名/` 形式的公开画板链接后即可切换灵感墙；独立外链箭头用于打开 Pinterest 原页。链接保存在当前浏览器，移除操作只删除本地链接。
@@ -90,8 +116,8 @@ GIF 收藏在瀑布流中直接播放原始动图；静态图片继续使用 Web
 环境要求：**Node.js 20 或更高版本**。
 
 ```bash
-git clone https://github.com/MegD1/Ice-works-showcase.git
-cd Ice-works-showcase
+git clone https://github.com/jimppp123/just-inspiration.git
+cd just-inspiration
 npm install
 npm run dev
 ```
