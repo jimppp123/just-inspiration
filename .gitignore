@@ -14,9 +14,11 @@
 /coverage
 
 # local build and review artifacts
+/.dbg/
 /work/
 /.impeccable/
 /public/*.webp.json
+/debug-*.md
 
 # next.js
 /.next/
@@ -29,8 +31,9 @@
 .DS_Store
 *.pem
 
-# Fonts are committed. See the licence notice in README.md — PP Neue Montreal
-# is included for local development only and is not licensed by this project.
+# Apple font stays local; redistributable fonts include their licence notices.
+/public/fonts/PingFang-SC-Heavy.ttf
+/public/ppneuemontreal-book.otf
 
 # debug
 npm-debug.log*

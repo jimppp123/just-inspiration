@@ -1,19 +1,18 @@
 import { MAX_PLANES } from "../shaders/planeShaders";
-import { EASES, WEIGHTS } from "./params";
+import { cursorParams, EASES, WEIGHTS } from "./params";
 import { TAU } from "./utils";
+import { drawerParams, transitionParams } from "../focus/params";
 
 /**
  * The lil-gui panel. Development only, and imported dynamically so it never
  * reaches a production bundle.
  *
  * `actions` are the things a control has to call when it changes something the
- * loop does not re-read on its own: `refit` for anything the window bands
- * depend on, `styleMeta` for anything the DOM labels are sized from,
- * `replay` for anything baked into the entry timeline when it is built.
+ * loop does not re-read on its own: `refit` for responsive values and `replay`
+ * for anything baked into the entry timeline when it is built.
  */
 export function mountGui(GUI, { params, state, info, actions }) {
-  const { replay, refit, styleMeta, setThreshold, rebuildText, rebuildTag } =
-    actions;
+  const { replay, refit, rebuildText } = actions;
 
   const gui = new GUI({ title: "ring" });
 
@@ -23,6 +22,63 @@ export function mountGui(GUI, { params, state, info, actions }) {
   gui.add(state, "spin", -TAU * 10, TAU * 10, 0.001).listen();
   gui.add(state, "shift", 0, 1, 0.001).listen();
   gui.add({ replay }, "replay");
+
+  const navigation = gui.addFolder("page transitions");
+  const motion = transitionParams();
+  navigation.add(motion, "enter", 300, 1400, 10).name("enter (ms)");
+  navigation.add(motion, "exit", 300, 1200, 10).name("return (ms)");
+  navigation.add(motion, "ease");
+  navigation.add(motion, "shelfEnter", 300, 1200, 10).name("shelf enter (ms)");
+  navigation.add(motion, "shelfExit", 200, 900, 10).name("shelf return (ms)");
+  navigation.add(motion, "shelfOvershoot", 1, 1.04, 0.001).name("settle");
+  navigation.add(motion, "shelfWave", 0, 120, 5).name("wave (ms)");
+
+  const lens = gui.addFolder("glass cursor");
+  const cursor = cursorParams();
+  for (const [key, min, max] of [
+    ["diameter", 16, 80],
+    ["precisionDiameter", 12, 28],
+    ["magnify", 0, 0.8],
+    ["precisionMagnify", 0, 0.6],
+    ["dispersion", 0, 2],
+    ["precisionDispersion", 0, 1],
+    ["shine", 0, 0.6],
+    ["rim", 0, 0.5],
+    ["deform", 0, 0.12],
+    ["response", 8, 40],
+  ])
+    lens.add(cursor, key, min, max);
+
+  const drawer = gui.addFolder("glass menu");
+  const surface = drawerParams();
+  for (const [key, min, max] of [
+    ["enter", 100, 1000],
+    ["exit", 80, 350],
+    ["travel", 0, 12],
+    ["scaleX", 0.5, 1],
+    ["scaleY", 0.5, 1],
+    ["springDamping", 5, 14],
+    ["springFrequency", 5, 14],
+    ["squeeze", 0, 0.06],
+    ["cornerFlex", 0, 24],
+    ["gap", 4, 24],
+    ["corner", 8, 40],
+    ["bevel", 2, 16],
+    ["refract", 0, 30],
+    ["bendWidth", 24, 120],
+    ["edgeBlend", 4, 28],
+    ["lens", 0, 0.08],
+    ["frost", 0, 8],
+    ["veil", 0, 1],
+    ["shadow", 0, 0.3],
+    ["shine", 0, 0.15],
+    ["fringe", 0, 1],
+    ["pixelRatio", 1, 2],
+  ]) {
+    drawer.add(surface, key, min, max).onChange(() => {
+      window.dispatchEvent(new Event("liquid-drawer-change"));
+    });
+  }
 
   // -- fit -----------------------------------------------------------------
   // Every px param in the folders below is quoted at the reference window.
@@ -58,22 +114,13 @@ export function mountGui(GUI, { params, state, info, actions }) {
   fit
     .add(params, "narrowText", 0.5, 3, 0.01)
     .name("narrow text x")
-    .onChange(() => {
-      refit();
-      styleMeta();
-    });
+    .onChange(refit);
   fit.add(params, "narrowPosX", -4, 4, 0.005).name("narrow move x");
   fit.add(params, "narrowEndScale", 0.05, 8, 0.01).name("narrow end scale");
   onFit("tightAt", 240, 1200, 10, "tight at (px)");
   onFit("tightRadius", 0.3, 2, 0.01, "tight radius x");
   fit.add(params, "tightPosX", -6, 6, 0.005).name("tight move x");
   onFit("tightSplit", 0.2, 2, 0.01, "tight heading x");
-  const onMetaFit = (k, lo, hi, step, label) =>
-    fit.add(params, k, lo, hi, step).name(label).onChange(styleMeta);
-  onMetaFit("tightName", 0.3, 3, 0.01, "tight name x");
-  onMetaFit("tightNameBottom", 0, 200, 1, "tight name bottom");
-  onMetaFit("tightNameRight", 0, 200, 1, "tight name right");
-  onMetaFit("tightMetaWidth", 10, 100, 1, "tight box (vw)");
 
   // -- shape ---------------------------------------------------------------
   const shape = gui.addFolder("shape");
@@ -88,37 +135,45 @@ export function mountGui(GUI, { params, state, info, actions }) {
   shape.add(params, "imageOffset", 0, 32, 1).name("image offset");
   shape.add(info, "restingGap").listen().disable().name("resting gap");
 
+  const lane = gui.addFolder("horizontal gallery");
+  lane.add(params, "laneWidth", 240, 800, 1).name("card width");
+  lane.add(params, "laneAspect", 0.5, 1.5, 0.01).name("card bounds aspect");
+  lane.add(params, "laneHeightFill", 0.4, 0.85, 0.01).name("height limit");
+  lane.add(params, "laneWidthFill", 0.4, 0.85, 0.01).name("width limit");
+  lane.add(params, "laneSpacing", 0.8, 1.5, 0.01).name("spacing");
+  lane.add(params, "laneTightSpacing", 0.8, 1.2, 0.01).name("phone spacing");
+  lane.add(params, "laneSideScale", 0.4, 0.9, 0.01).name("side scale");
+  lane.add(params, "laneFocusFalloff", 1, 6, 0.1).name("focus falloff");
+  lane.add(params, "laneSideDim", 0, 0.4, 0.01).name("side dim");
+  lane.add(params, "laneTitleY", 0.85, 0.96, 0.005).name("title position");
+  lane.add(params, "laneEnterScale", 0.3, 1, 0.01).name("entry scale");
+  lane.add(params, "laneGlassAt", 0, 0.95, 0.01).name("glass starts");
+  lane
+    .add(params, "laneRevealTime", 0.4, 3, 0.05)
+    .name("entry time")
+    .onChange(replay);
+  lane.add(params, "wheelFill", 0.2, 0.65, 0.01).name("wheel fill");
+  lane.add(params, "wheelTime", 0.2, 2, 0.05).name("wheel time");
+  lane.add(params, "wheelEase", EASES).name("wheel ease");
+  lane.add(params, "wheelMargin", 0, 80, 1).name("wheel margin");
+  lane.add(params, "laneSideBand", 0.05, 0.4, 0.01).name("edge band");
+  lane.add(params, "laneSidePull", 0, 160, 1).name("edge pull");
+  lane.add(params, "laneSideFlare", 0, 2, 0.01).name("edge flare");
+  lane.add(params, "laneEdgeSoftness", 0, 20, 0.5).name("edge softness");
+  lane.add(params, "laneEdgeDispersion", 0, 16, 0.5).name("edge dispersion");
+
   // -- loader --------------------------------------------------------------
-  const loader = gui.addFolder("loader");
-  loader.add(params, "loaderChase", 0.02, 1, 0.01).name("count speed");
-  loader.add(params, "holdAfter", 0, 3, 0.05).name("beat after 100 (s)");
+  const loader = gui.addFolder("load gate");
+  loader.add(params, "loaderChase", 0.02, 1, 0.01).name("settle speed");
+  loader.add(params, "holdAfter", 0, 3, 0.05).name("ready hold (s)");
   loader
-    .add(params, "loaderBottom", 0, 20, 0.1)
-    .name("from bottom (vh)")
-    .onChange(styleMeta);
-  loader.add(params, "loaderOut", 0.05, 3, 0.05).name("fade out (s)");
+    .add(params, "artTimeout", 1000, 15000, 100)
+    .name("image timeout (next load)");
 
   // -- entry ---------------------------------------------------------------
-  const timing = gui.addFolder("timing");
-  timing.add(params, "stagger", 0, 1, 0.005);
-  timing.add(params, "launchTime", 0.05, 12, 0.05).onChange(replay);
-  timing.add(params, "spreadTime", 0.1, 30, 0.1).onChange(replay);
+  const timing = gui.addFolder("opening");
+  timing.add(params, "entryBirthTime", 0.2, 1.5, 0.01).onChange(replay);
   timing.add(params, "spreadEase", EASES).onChange(replay);
-
-  const stage = gui.addFolder("stage");
-  const onStage = (k, lo, hi, step, label) =>
-    stage.add(params, k, lo, hi, step).name(label).onChange(replay);
-  onStage("stageAt", 0, 1, 0.01, "start (0=early, 1=formed)");
-  onStage("spinTurns", -12, 12, 0.01, "spinTurns");
-  onStage("spinTime", 0.05, 30, 0.05, "spinTime");
-  onStage("spinDelay", 0, 15, 0.05, "spinDelay");
-  stage.add(params, "spinEase", EASES).onChange(replay);
-  stage.add(params, "posX", -4, 4, 0.005).name("move x");
-  stage.add(params, "posY", -4, 4, 0.005).name("move y");
-  stage.add(params, "endScale", 0.05, 8, 0.01).name("end scale");
-  onStage("moveTime", 0.05, 30, 0.05, "moveTime");
-  onStage("moveDelay", 0, 15, 0.05, "moveDelay");
-  stage.add(params, "moveEase", EASES).onChange(replay);
 
   // -- the intro heading ----------------------------------------------------
   const text = gui.addFolder("text");
@@ -127,10 +182,15 @@ export function mountGui(GUI, { params, state, info, actions }) {
   text
     // Only families with an @font-face block in globals.css — anything else
     // silently falls back to system sans and looks like a bug.
-    .add(params, "textFont", ["PP Neue Montreal", "Satoshi", "Geist"])
+    .add(params, "textFont", [
+      "PingFang Heavy",
+      "Noto Sans SC",
+      "Satoshi",
+      "Geist",
+    ])
     .name("family")
     .onChange(rebuildText);
-  text.add(params, "textWeight", { Light: 300, Regular: 400 }).onChange(rebuildText); // prettier-ignore
+  text.add(params, "textWeight", WEIGHTS).onChange(rebuildText);
   text
     .add(params, "textTracking", -0.1, 0.4, 0.005)
     .name("tracking (em)")
@@ -147,30 +207,6 @@ export function mountGui(GUI, { params, state, info, actions }) {
   text.add(params, "textOutTime", 0.05, 6, 0.05).onChange(replay);
   text.add(params, "textOutEase", EASES).onChange(replay);
 
-  // -- the meta either side of the ring -------------------------------------
-  const meta = gui.addFolder("meta");
-  const onMeta = (k, lo, hi, step, label) =>
-    meta.add(params, k, lo, hi, step).name(label).onChange(styleMeta);
-  onMeta("metaLeft", 0, 30, 0.1, "left (vw)");
-  onMeta("metaRight", 0, 30, 0.1, "right (vw)");
-  onMeta("metaGapL", 0, 20, 0.1, "gap left (vw)");
-  onMeta("metaGapR", 0, 20, 0.1, "gap right (vw)");
-  onMeta("metaWidth", 5, 60, 0.5, "box (vw)");
-  onMeta("nameSize", 0.5, 10, 0.01, "name size (vw)");
-  onMeta("idxSize", 0.4, 8, 0.01, "number size (vw)");
-  onMeta("listSize", 0.3, 4, 0.01, "column size (vw)");
-  meta.add(params, "nameWeight", WEIGHTS).name("name weight").onChange(styleMeta); // prettier-ignore
-  meta.add(params, "idxWeight", WEIGHTS).name("number weight").onChange(styleMeta); // prettier-ignore
-  meta.add(params, "nameMorphTime", 0.1, 4, 0.05).name("morph time");
-  meta.add(params, "nameEase", EASES).name("ease");
-  meta.add(params, "nameBlur", 0, 40, 0.5).name("smear");
-  meta.add(params, "nameEdge", 8, 800, 1).name("threshold gain").onChange(setThreshold); // prettier-ignore
-  meta.add(params, "nameCut", 0.05, 0.95, 0.01).name("threshold cut").onChange(setThreshold); // prettier-ignore
-  meta.add(params, "nameSoften", 0, 3, 0.05).name("soften");
-  // Re-announces whatever is already at the front, so the morph can be watched
-  // without spinning to a new card each time.
-  meta.add({ again: actions.replayMeta }, "again").name("play again");
-
   // -- glass ---------------------------------------------------------------
   const glass = gui.addFolder("glass");
   glass.add(params, "glass").name("enabled");
@@ -185,6 +221,8 @@ export function mountGui(GUI, { params, state, info, actions }) {
 
   // -- input ---------------------------------------------------------------
   const scroll = gui.addFolder("scroll");
+  scroll.add(params, "autoSpeed", -2, 2, 0.005).name("auto rad / s");
+  scroll.add(params, "autoResume", 0, 8, 0.1).name("resume delay");
   scroll.add(params, "scrollSpeed", 0, 0.05, 0.0001);
   scroll.add(params, "damping", 0.5, 0.999, 0.001);
   scroll.add(params, "maxSpeed", 0.5, 60, 0.5);
@@ -223,14 +261,28 @@ export function mountGui(GUI, { params, state, info, actions }) {
 
   const focusParticles = gui.addFolder("hover particles");
   focusParticles.add(params, "focusParticles").name("enabled");
-  focusParticles.add(params, "focusParticleFrom", 0, 2000, 10).name("desktop from (px)");
+  focusParticles
+    .add(params, "focusParticleFrom", 0, 2000, 10)
+    .name("desktop from (px)");
   focusParticles.add(params, "focusParticleReach", 10, 260, 1).name("reach");
-  focusParticles.add(params, "focusParticleCell", 5, 32, 0.5).name("glyph size");
-  focusParticles.add(params, "focusParticleOpacity", 0, 1, 0.01).name("opacity");
-  focusParticles.add(params, "focusParticleEnter", 0.01, 1, 0.005).name("enter rate");
-  focusParticles.add(params, "focusParticleExit", 0.01, 1, 0.005).name("exit rate");
-  focusParticles.add(params, "focusParticleDrift", 0, 6, 0.05).name("inward drift");
-  focusParticles.add(params, "focusParticleOut", 0, 12, 0.05).name("outward speed");
+  focusParticles
+    .add(params, "focusParticleCell", 5, 32, 0.5)
+    .name("glyph size");
+  focusParticles
+    .add(params, "focusParticleOpacity", 0, 1, 0.01)
+    .name("opacity");
+  focusParticles
+    .add(params, "focusParticleEnter", 0.01, 1, 0.005)
+    .name("enter rate");
+  focusParticles
+    .add(params, "focusParticleExit", 0.01, 1, 0.005)
+    .name("exit rate");
+  focusParticles
+    .add(params, "focusParticleDrift", 0, 6, 0.05)
+    .name("inward drift");
+  focusParticles
+    .add(params, "focusParticleOut", 0, 12, 0.05)
+    .name("outward speed");
 
   const assemble = gui.addFolder("particle opening");
   assemble.add(params, "assemble").name("enabled").onChange(replay);
@@ -245,19 +297,9 @@ export function mountGui(GUI, { params, state, info, actions }) {
   assemble.add(params, "assembleCell", 6, 30, 0.5).name("glyph size");
   assemble.add(params, "assembleOpacity", 0, 1, 0.01).name("opacity");
   assemble.add(params, "assembleHaloReach", 20, 260, 1).name("card halo reach");
-  assemble.add(params, "assembleHaloOpacity", 0, 1, 0.01).name("card halo opacity");
-
-  const tag = gui.addFolder("tag");
-  tag.add(params, "tagFrom", 0, 2000, 10).name("hide at or below (px)");
-  tag.add(params, "tagText").name("label").onFinishChange(rebuildTag);
-  tag.add(params, "tagSize", 6, 40, 1).name("size").onChange(rebuildTag);
-  tag.add(params, "tagArrow", 0, 40, 1).name("arrow").onChange(rebuildTag);
-  tag.add(params, "tagGap", 0, 30, 1).name("gap").onChange(rebuildTag);
-  tag.add(params, "tagX", -400, 400, 1).name("offset x");
-  tag.add(params, "tagY", -400, 400, 1).name("offset y (+up)");
-  tag.add(params, "tagFrost", 0, 1, 0.01).name("frost");
-  tag.add(params, "tagRim", 0, 1, 0.01).name("rim");
-  tag.add(params, "tagRefract", 0, 60, 0.5).name("refract");
+  assemble
+    .add(params, "assembleHaloOpacity", 0, 1, 0.01)
+    .name("card halo opacity");
 
   // -- material ------------------------------------------------------------
   const honey = gui.addFolder("honey");

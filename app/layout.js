@@ -1,14 +1,14 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Viscose",
+  title: "AI 灵感册",
   description:
-    "A portfolio carousel rendered as a single WebGL shader. Cards ride a ring and stretch into threads as they pull apart.",
+    "浏览 Pinterest 灵感收藏，长按图片以液态裂变方式探索更多关联画面。",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

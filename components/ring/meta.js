@@ -1,5 +1,4 @@
 import gsap from "gsap";
-import { PROJECTS } from "./projects";
 
 /**
  * The two lockups of type either side of the ring: [number . name] on the
@@ -137,7 +136,7 @@ function createGroup(side, groups, params) {
  * refs: { groups, list, loader, cut, live } — DOM handed over from the
  * component. `groups` is the shape the JSX populates, one entry per side.
  */
-export function createMeta(refs, params) {
+export function createMeta(refs, params, projects) {
   const { groups, list, loader, cut, live } = refs;
   const left = createGroup("left", groups, params);
   const right = createGroup("right", groups, params);
@@ -161,7 +160,7 @@ export function createMeta(refs, params) {
     const bigVw = params.nameSize * textK * (tight ? params.tightName : 1);
     const big = `${bigVw}vw`;
     const small = `${params.idxSize * textK}vw`;
-    const bigFace = `"${params.nameFont}", ui-sans-serif, system-ui, sans-serif`;
+    const bigFace = `"${params.nameFont}", "PingFang SC", "Microsoft YaHei", sans-serif`;
     const smallFace = `"${params.idxFont}", ui-sans-serif, system-ui, sans-serif`;
     const bigWeight = `${params.nameWeight}`;
     const smallWeight = `${params.idxWeight}`;
@@ -234,7 +233,10 @@ export function createMeta(refs, params) {
 
     // The column and the counter are set from here too, so all the type moves
     // as one piece across a breakpoint instead of half of it growing.
-    if (list) list.style.fontSize = `${params.listSize * textK}vw`;
+    if (list) {
+      list.style.fontFamily = bigFace;
+      list.style.fontSize = `${params.listSize * textK}vw`;
+    }
     if (loader) {
       loader.style.bottom = `${params.loaderBottom}vh`;
       loader.style.fontFamily = smallFace;
@@ -248,13 +250,13 @@ export function createMeta(refs, params) {
   // Both groups in one call, so the number can never drift from the name it
   // is numbering.
   const show = (i) => {
-    const p = PROJECTS[i];
+    const p = projects[i];
     if (!p) return;
     left.set([String(i + 1).padStart(2, "0"), p.name]);
-    right.set([p.type, p.year]);
+    right.set([p.type, "Pinterest"]);
     // The groups are hidden from the accessibility tree, so the card is
     // announced once, in full, from the live region instead of four times.
-    if (live) live.textContent = `${p.name}. ${p.type}, ${p.year}.`;
+    if (live) live.textContent = `${p.name}，${p.type}，Pinterest 参考灵感。`;
   };
 
   const dispose = () => {

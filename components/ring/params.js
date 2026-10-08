@@ -1,5 +1,19 @@
 import { PROJECTS } from "./projects";
 
+const glassCursor = {
+  diameter: 28,
+  precisionDiameter: 18,
+  magnify: 0.64,
+  precisionMagnify: 0.3,
+  dispersion: 1.5,
+  precisionDispersion: 0.55,
+  shine: 0.46,
+  rim: 0.2,
+  deform: 0.065,
+  response: 30,
+};
+export const cursorParams = () => glassCursor;
+
 export const EASES = [
   "power2.out",
   "power3.out",
@@ -10,11 +24,18 @@ export const EASES = [
   "power1.inOut",
   "power2.inOut",
   "power3.inOut",
+  "sine.inOut",
   "expo.inOut",
   "none",
 ];
 
-export const WEIGHTS = { Light: 300, Regular: 400, Medium: 500, Semibold: 600 };
+export const WEIGHTS = {
+  Light: 300,
+  Regular: 400,
+  Medium: 500,
+  Semibold: 600,
+  Heavy: 800,
+};
 
 /**
  * Every tunable in one place. A fresh object per mount so the dev panel cannot
@@ -50,10 +71,6 @@ export function defaultParams() {
     tightRadius: 0.82, // multiplies narrowRadius
     tightPosX: -3.5,
     tightSplit: 0.8, // the heading, competing with the ring for centre screen
-    tightName: 1.5, // the name is the only label left, so it takes the billing
-    tightNameBottom: 16, // px
-    tightNameRight: 16, // px
-    tightMetaWidth: 70, // vw of box, and so of filter region, around it
 
     // -- geometry, all at the reference window ---------------------------
     planeSize: 90, // long edge in px; aspect locked at 1.5 : 1
@@ -66,18 +83,37 @@ export function defaultParams() {
     blend: 14, // px over which neighbouring art crossfades in the goo
     imageOffset: 0, // rotates the whole deal; 0 lands the entry on PROJECTS[0]
 
+    // -- horizontal gallery ---------------------------------------------
+    laneWidth: 490, // reference px; also constrained by the viewport below
+    laneAspect: 0.8,
+    laneHeightFill: 0.76,
+    laneWidthFill: 0.68,
+    laneSpacing: 1.0, // centre distance in full card widths
+    laneTightSpacing: 0.88, // retain a visible neighbour on narrow phones
+    laneSideScale: 0.67,
+    laneFocusFalloff: 3,
+    laneSideDim: 0.08,
+    laneTitleY: 0.93,
+    laneEnterScale: 0.7,
+    laneRevealTime: 1.5,
+    laneGlassAt: 0.65, // refraction arrives after the neighbours take shape
+    laneSideBand: 0.24, // fraction of viewport width, fades in at the sides
+    laneSidePull: 136,
+    laneSideFlare: 0.55,
+    laneEdgeSoftness: 6,
+    laneEdgeDispersion: 4.5,
+    artTimeout: 6500,
+
     // -- loading ---------------------------------------------------------
-    // The counter is the gate: the entry launches on the frame it reads 100.
-    // holdAfter is a beat held after that and wants to stay near zero.
+    // The invisible gate waits for both artwork and the seed's birth.
     holdAfter: 0,
     loaderChase: 0.18,
-    loaderBottom: 1, // vh
-    loaderOut: 0.45, // seconds to fade once the hold lets go
 
     // -- entry timing ----------------------------------------------------
+    entryBirthTime: 0.5,
     stagger: 0.34,
     launchTime: 1.95,
-    spreadEase: "power2.out",
+    spreadEase: "sine.inOut",
     spreadTime: 3.6,
     // Where the ring goes once formed. stageAt is a fraction of the spread, so
     // 0.5 starts the move midway through the ring drawing.
@@ -94,6 +130,8 @@ export function defaultParams() {
     moveDelay: 0.2,
 
     // -- scroll / drag / click, live once the entry finishes --------------
+    autoSpeed: 0.08, // rad/s after the entry and manual interaction settle
+    autoResume: 1.1, // seconds after manual input
     scrollSpeed: 0.0022, // rad/s of angular velocity per px of wheel delta
     damping: 0.94, // velocity kept per 60fps frame
     maxSpeed: 12, // rad/s, so one flick cannot run away
@@ -104,12 +142,18 @@ export function defaultParams() {
     pickTime: 0.55, // click-to-centre: seconds for one slot, root-scaled
     pickEase: "power3.inOut",
 
+    // -- one-click full-wheel view ---------------------------------------
+    wheelFill: 0.44, // outer radius as a fraction of the shorter viewport side
+    wheelTime: 0.9,
+    wheelEase: "power3.inOut",
+    wheelMargin: 18,
+
     // -- the intro heading, in the scene ---------------------------------
-    text: "ICE WORKS",
+    text: "",
     textSize: 41,
-    textFont: "PP Neue Montreal",
-    textWeight: 400,
-    textTracking: 0, // em
+    textFont: "Noto Sans SC",
+    textWeight: 800,
+    textTracking: 0.06, // em
     textColor: "#0a0a0a",
     textAt: 0.42, // fraction of the spread
     textTime: 0.95,
@@ -119,30 +163,6 @@ export function defaultParams() {
     textOutAt: -0.5, // seconds relative to the ring landing; negative = early
     textOutTime: 0.7,
     textOutEase: "power2.in",
-
-    // -- the meta either side of the ring --------------------------------
-    // [number . name] left, [type . year] right. Insets and gaps in vw so the
-    // pairs hold their relationship as the window changes.
-    metaLeft: 5.5,
-    metaRight: 5.5,
-    metaGapL: 4.7,
-    metaGapR: 3.6,
-    metaWidth: 34, // this box is the filter region
-    nameSize: (24 / 1440) * 100, // vw, quoted at 1440
-    nameFont: "Satoshi",
-    nameWeight: 500,
-    idxSize: (16 / 1440) * 100, // a step lighter and smaller than the name
-    idxFont: "Geist",
-    idxWeight: 400,
-    listSize: 0.9, // vw; the column's line height is unitless so rows follow
-
-    // The morph between one card's words and the next.
-    nameMorphTime: 1.2,
-    nameEase: "circ.out",
-    nameBlur: 8.5, // px the outgoing word smears to before it lets go
-    nameEdge: 400, // alpha gain — how abruptly the threshold sets
-    nameCut: 0.33, // and the alpha it sets at
-    nameSoften: 0.35, // px of blur after it, standing in for antialiasing
 
     // -- glass lip along the top and bottom ------------------------------
     glass: true,
@@ -156,8 +176,6 @@ export function defaultParams() {
     sheen: 0.05,
 
     // -- pointer ---------------------------------------------------------
-    // Nothing is drawn at the cursor. It softens the field around itself,
-    // leans the nearest planes toward it and strings honey back between them.
     hover: true,
     touchHold: 0.16, // seconds of near-still press before a finger counts
     touchSlop: 10, // px of travel inside that window that calls it a swipe
@@ -185,7 +203,7 @@ export function defaultParams() {
     // -- particles behind the hovered card -------------------------------
     // Only the card under the pointer gets this field. The ring and bridges
     // stay clean, while the same amount drives a reversible in/out flow.
-    focusParticles: true,
+    focusParticles: false,
     focusParticleFrom: 1024,
     focusParticleReach: 82,
     focusParticleCell: 11,
@@ -198,7 +216,7 @@ export function defaultParams() {
     // -- particle-to-image opening --------------------------------------
     // The first atlas cell begins as a four-way mirrored ASCII diamond. It
     // contracts and squares into a large centre card before the ring fires.
-    assemble: true,
+    assemble: false,
     assembleFrom: 1024,
     assembleTime: 1.55,
     assembleEase: "power3.inOut",
@@ -208,21 +226,6 @@ export function defaultParams() {
     assembleOpacity: 0.96,
     assembleHaloReach: 148,
     assembleHaloOpacity: 0.72,
-
-    // -- the cursor tag, drawn in the same shader pass --------------------
-    tagFrom: 1024, // viewport width it needs; below that there is no cursor
-    tagText: "View",
-    tagSize: 14,
-    tagWeight: 500,
-    tagArrow: 14, // px, the svg in /public
-    tagGap: 6,
-    // Offset off the cursor deliberately: sitting under it, the tag covers
-    // the thing being pointed at. World px, so +y is up like posY.
-    tagX: 64,
-    tagY: -38,
-    tagFrost: 0.16,
-    tagRim: 0.02,
-    tagRefract: 39.5,
 
     // -- honey between neighbouring planes --------------------------------
     thread: 1.0,

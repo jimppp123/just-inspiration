@@ -1,17 +1,38 @@
 import * as THREE from "three";
-import { IMAGE_FILES } from "./projects";
+import { PROJECTS } from "./projects";
 
-// Cell aspect matches the plane's 1.5 : 1 so nothing is distorted.
+// Cells store full sources; per-card dimensions restore their natural aspect.
 const CELL_W = 512;
 const CELL_H = Math.round(CELL_W / 1.5);
 
-const load = (src, priority) =>
+const localSource = (src) =>
+  src.startsWith("/") || /^https?:/.test(src) ? src : `/${src}`;
+
+const load = (src, priority, timeout, pending) =>
   new Promise((resolve, reject) => {
     const img = new Image();
     // Must be set before src or the request is already away.
     if (priority) img.fetchPriority = priority;
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`failed to load ${src}`));
+    const clear = () => {
+      clearTimeout(timer);
+      pending.delete(cancel);
+      img.onload = img.onerror = null;
+    };
+    const cancel = () => {
+      clear();
+      img.src = "";
+      reject(new Error(`image cancelled: ${src}`));
+    };
+    const timer = setTimeout(cancel, timeout);
+    pending.add(cancel);
+    img.onload = () => {
+      clear();
+      resolve(img);
+    };
+    img.onerror = () => {
+      clear();
+      reject(new Error(`failed to load ${src}`));
+    };
     img.src = src;
   });
 
@@ -28,9 +49,14 @@ const load = (src, priority) =>
  * Neither rejects — a missing file leaves its cell blank and still counts as
  * settled, so one bad path cannot strand the entry.
  */
-export function buildAtlas(files = IMAGE_FILES, onProgress) {
-  const cols = Math.ceil(Math.sqrt(files.length));
-  const rows = Math.ceil(files.length / cols);
+export function buildAtlas(projects = PROJECTS, onProgress, timeout = 6500) {
+  const cols = Math.ceil(Math.sqrt(projects.length));
+  const rows = Math.ceil(projects.length / cols);
+  const aspects = projects.map(() => 1.5);
+  const sources = projects.map((project) => localSource(project.file));
+  const dimensions = projects.map(() => ({ width: 3, height: 2 }));
+  const pending = new Set();
+  let disposed = false;
 
   const canvas = document.createElement("canvas");
   canvas.width = cols * CELL_W;
@@ -46,54 +72,81 @@ export function buildAtlas(files = IMAGE_FILES, onProgress) {
   texture.colorSpace = THREE.NoColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  // Nearest-card selection changes atlas cells across neighbouring pixels.
+  // Implicit mip derivatives see that jump as huge minification and sample
+  // unrelated cells, leaving seams in the liquid blend.
+  texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = true;
+  texture.generateMipmaps = false;
 
   const paint = (img, i) => {
     const x = (i % cols) * CELL_W;
     const y = Math.floor(i / cols) * CELL_H;
 
-    // Cover fit: fill the cell, crop the overflow, never squash.
-    const scale = Math.max(CELL_W / img.width, CELL_H / img.height);
-    const dw = img.width * scale;
-    const dh = img.height * scale;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, CELL_W, CELL_H); // clip, or an oversized image bleeds
-    ctx.clip();
-    ctx.drawImage(img, x + (CELL_W - dw) / 2, y + (CELL_H - dh) / 2, dw, dh);
-    ctx.restore();
+    // UVs span the complete photo. Only storage is resampled to the cell;
+    // the drawn plane uses this decoded ratio, including local fallbacks.
+    ctx.fillStyle = "#fafafa";
+    ctx.fillRect(x, y, CELL_W, CELL_H);
+    ctx.drawImage(img, x, y, CELL_W, CELL_H);
+    aspects[i] = img.naturalWidth / img.naturalHeight;
+    sources[i] = img.currentSrc || img.src;
+    dimensions[i] = { width: img.naturalWidth, height: img.naturalHeight };
   };
 
   let settled = 0;
-  const tick = () => onProgress?.(settled / files.length);
+  const tick = () => onProgress?.(settled / projects.length);
 
-  const fetchInto = (i, priority) =>
-    load(`/${files[i]}`, priority)
-      .then((img) => paint(img, i))
-      .catch((err) => console.warn("[atlas]", err.message))
+  const fetchInto = (i, priority) => {
+    const fallback = localSource(projects[i].file);
+    const source = projects[i].source
+      ? `/api/pinterest/image?url=${encodeURIComponent(projects[i].source.replace("/originals/", "/736x/"))}`
+      : fallback;
+    return load(source, priority, timeout, pending)
+      .catch((error) => {
+        if (source === fallback || disposed) throw error;
+        return load(fallback, priority, timeout, pending);
+      })
+      .then((img) => {
+        if (!disposed) paint(img, i);
+      })
+      .catch((err) => {
+        if (!disposed) console.warn("[atlas]", err.message);
+      })
       .finally(() => {
         settled++;
-        tick();
+        if (!disposed) tick();
       });
+  };
 
   // Cell 0 is the seed's art, the only thing on screen during the hold, so it
   // is asked for ahead of the rest and uploaded the moment it lands.
   const first = fetchInto(0, "high").then(() => {
-    texture.needsUpdate = true;
+    if (!disposed) texture.needsUpdate = true;
   });
 
   // One upload at the end for everything else. Marking dirty per image would
   // re-send the whole sheet eighteen times for cells nobody is looking at yet.
   const ready = Promise.all([
     first,
-    ...files.slice(1).map((_, k) => fetchInto(k + 1, "low")),
+    ...projects.slice(1).map((_, k) => fetchInto(k + 1, "low")),
   ]).then(() => {
-    texture.needsUpdate = true;
+    if (!disposed) texture.needsUpdate = true;
   });
 
   tick();
-  return { texture, grid: [cols, rows], count: files.length, first, ready };
+  return {
+    texture,
+    grid: [cols, rows],
+    count: projects.length,
+    aspects,
+    sources,
+    dimensions,
+    first,
+    ready,
+    dispose: () => {
+      disposed = true;
+      for (const cancel of pending) cancel();
+      texture.dispose();
+    },
+  };
 }

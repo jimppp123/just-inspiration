@@ -1,5 +1,5 @@
-import Carousel from "@/components/Carousel";
+import Notebook from "@/components/Notebook";
 
 export default function Page() {
-  return <Carousel />;
+  return <Notebook />;
 }

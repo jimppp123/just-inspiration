@@ -26,11 +26,21 @@ This license covers the source code only.
 
 The contents of `public/` are NOT covered by it:
 
-  - PP Neue Montreal (`public/ppneuemontreal-book.otf`) is a commercial
-    typeface by Pangram Pangram. It is bundled here for local development and
-    evaluation only. It is not licensed by this project, must not be used for
-    commercial purposes, and no rights to it are granted by the terms above.
-    Buy a licence from the foundry, or substitute another face.
+  - PingFang SC Heavy (`public/fonts/PingFang-SC-Heavy.ttf`) was supplied by
+    the user for this interface. Copyright (c) 2015 Apple Inc. All rights
+    reserved. It is not licensed by this project and no rights to redistribute
+    or use it commercially are granted by the MIT terms above.
+
+  - PP Neue Montreal is a commercial typeface by Pangram Pangram, previously
+    bundled as `public/ppneuemontreal-book.otf` for local development and
+    evaluation only. The Chinese edition removes that file. No rights to
+    historical copies are granted by this project; commercial use still
+    requires a licence from the foundry.
+
+  - Noto Sans SC (`public/fonts/noto-sans-sc-subset.woff2`) is licensed under
+    the SIL Open Font License 1.1. Copyright 2014-2021 Adobe, with Reserved
+    Font Name 'Source'. This interface subset was obtained from Google Fonts.
+    The complete font licence is included in `public/fonts/OFL.txt`.
 
   - Satoshi (`public/Satoshi-*.otf`) is licensed under the Indian Type
     Foundry Free Font Licence via Fontshare — free for personal and
@@ -40,13 +50,15 @@ The contents of `public/` are NOT covered by it:
     Licence 1.1. Copyright 2024 The Geist Project Authors.
     https://github.com/vercel/geist-font
 
-  - Project imagery (`public/*.webp`) is not mine. This local study uses
-    imagery downloaded from a user-supplied Pinterest pin and its visible
-    recommendations purely so there was real material to build and judge the
-    layout against. Source URLs are recorded in `public/pinterest-sources.json`.
-    I claim no ownership of any of it, no licence over it is granted by the
-    terms above, and its use here is not an endorsement of reusing it. Anyone
-    forking this should replace it with their own work.
+  - Project imagery (`public/*.webp` and `public/pinterest/**/*.webp`) is not
+    mine. The current carousel uses the latest publicly returned pins from a
+    user-supplied Pinterest board purely for a personal inspiration interface.
+    Pin and original image URLs are recorded in
+    `public/pinterest/ai-inspiration.json`; earlier reference URLs remain in
+    `public/pinterest-sources.json`. I claim no ownership of any of it, no
+    licence over it is granted by the terms above, and its use here is not an
+    endorsement of reusing it. Anyone forking this should replace it with
+    their own licensed material.
 
     If you made one of these pieces and would like to be credited, or would
     like it taken down, please open an issue on the repository and I will

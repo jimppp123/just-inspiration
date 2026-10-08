@@ -31,7 +31,7 @@ export function createSplitText(group, params) {
     // Above display resolution — type is the first thing to show softness and
     // these canvases are tiny.
     const dpr = Math.min(window.devicePixelRatio, 2) * 2;
-    const font = `${params.textWeight} ${size}px "${params.textFont}", ui-sans-serif, system-ui, sans-serif`;
+    const font = `${params.textWeight} ${size}px "${params.textFont}", "PingFang SC", "Microsoft YaHei", sans-serif`;
 
     const measure = document.createElement("canvas").getContext("2d");
     measure.font = font;

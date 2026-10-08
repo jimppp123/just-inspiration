@@ -1,0 +1,288 @@
+{
+  "board": {
+    "id": "437271513759531573",
+    "name": "DESIGN",
+    "url": "https://www.pinterest.com/HYPERD4ZE/design/",
+    "owner": "hyperd4ze",
+    "totalPins": 96,
+    "importedPins": 25,
+    "importedAt": "2026-09-29"
+  },
+  "pins": [
+    {
+      "id": "437271445093996998",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#000000",
+      "file": "pinterest/ai-inspiration/01.webp",
+      "url": "https://www.pinterest.com/pin/437271445093996998/",
+      "name": "DESIGN 01",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/18/03/3e/18033e83abac4c90078487c8468ff92f.jpg"
+    },
+    {
+      "id": "437271445092659540",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#58523d",
+      "file": "pinterest/ai-inspiration/02.webp",
+      "url": "https://www.pinterest.com/pin/437271445092659540/",
+      "name": "DESIGN 02",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/d6/ad/6d/d6ad6d22701c1eace6c2994dcc3c70f0.jpg"
+    },
+    {
+      "id": "437271445093498147",
+      "width": 736,
+      "height": 980,
+      "dominantColor": "#ffffff",
+      "file": "pinterest/ai-inspiration/03.webp",
+      "url": "https://www.pinterest.com/pin/437271445093498147/",
+      "name": "DESIGN 03",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/d7/89/1e/d7891e749c1e314bc4a9cd2ad3a71644.jpg"
+    },
+    {
+      "id": "437271445093870159",
+      "width": 736,
+      "height": 1307,
+      "dominantColor": "#5f1700",
+      "file": "pinterest/ai-inspiration/04.webp",
+      "url": "https://www.pinterest.com/pin/437271445093870159/",
+      "name": "DESIGN 04",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/68/10/3c/68103c756387e1d8cae5015340b75d5c.png"
+    },
+    {
+      "id": "437271445093437541",
+      "width": 720,
+      "height": 900,
+      "dominantColor": "#e9e5ec",
+      "file": "pinterest/ai-inspiration/05.webp",
+      "url": "https://www.pinterest.com/pin/437271445093437541/",
+      "name": "DESIGN 05",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/dd/ce/6f/ddce6f1c255b1495eab355ef39b3511f.jpg"
+    },
+    {
+      "id": "437271445092659617",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#343333",
+      "file": "pinterest/ai-inspiration/06.webp",
+      "url": "https://www.pinterest.com/pin/437271445092659617/",
+      "name": "DESIGN 06",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/d5/af/7d/d5af7dce39f68df5e2e82b754108f163.jpg"
+    },
+    {
+      "id": "437271445092997004",
+      "width": 628,
+      "height": 900,
+      "dominantColor": "#a3a09c",
+      "file": "pinterest/ai-inspiration/07.webp",
+      "url": "https://www.pinterest.com/pin/437271445092997004/",
+      "name": "DESIGN 07",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/d8/7f/81/d87f81448ce84fbf9a143d6c1c7a7be4.jpg"
+    },
+    {
+      "id": "437271445093498148",
+      "width": 720,
+      "height": 960,
+      "dominantColor": "#000000",
+      "file": "pinterest/ai-inspiration/08.webp",
+      "url": "https://www.pinterest.com/pin/437271445093498148/",
+      "name": "DESIGN 08",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/20/b5/15/20b5156ba13efbd402603f597073b6f7.jpg"
+    },
+    {
+      "id": "437271445093827058",
+      "width": 640,
+      "height": 800,
+      "dominantColor": "#1d2223",
+      "file": "pinterest/ai-inspiration/09.webp",
+      "url": "https://www.pinterest.com/pin/437271445093827058/",
+      "name": "DESIGN 09",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/c2/8f/bf/c28fbf0b05a494c821d2b483861dab9d.jpg"
+    },
+    {
+      "id": "437271445093819459",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#000000",
+      "file": "pinterest/ai-inspiration/10.webp",
+      "url": "https://www.pinterest.com/pin/437271445093819459/",
+      "name": "DESIGN 10",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/d8/98/3d/d8983dc6ec46e60c23f2135d9ba92312.jpg"
+    },
+    {
+      "id": "437271445089902853",
+      "width": 680,
+      "height": 680,
+      "dominantColor": "#070707",
+      "file": "pinterest/ai-inspiration/11.webp",
+      "url": "https://www.pinterest.com/pin/437271445089902853/",
+      "name": "DESIGN 11",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/e8/7d/7a/e87d7a190d5ce5d08cc956eadc9e2c37.jpg"
+    },
+    {
+      "id": "437271445092659610",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#bf6a39",
+      "file": "pinterest/ai-inspiration/12.webp",
+      "url": "https://www.pinterest.com/pin/437271445092659610/",
+      "name": "DESIGN 12",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/36/17/ef/3617ef7f7758eafe32a28fb7075e76e9.jpg"
+    },
+    {
+      "id": "437271445092951378",
+      "width": 736,
+      "height": 736,
+      "dominantColor": "#929195",
+      "file": "pinterest/ai-inspiration/13.webp",
+      "url": "https://www.pinterest.com/pin/437271445092951378/",
+      "name": "DESIGN 13",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/a1/69/8c/a1698c60c0fe68bd9385dffc2d294215.jpg"
+    },
+    {
+      "id": "437271445090707397",
+      "width": 736,
+      "height": 736,
+      "dominantColor": "#12171d",
+      "file": "pinterest/ai-inspiration/14.webp",
+      "url": "https://www.pinterest.com/pin/437271445090707397/",
+      "name": "DESIGN 14",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/9c/a1/21/9ca12114b2acc69cb0f4d5faa044ce30.jpg"
+    },
+    {
+      "id": "437271445093996999",
+      "width": 480,
+      "height": 480,
+      "dominantColor": "#080502",
+      "file": "pinterest/ai-inspiration/15.webp",
+      "url": "https://www.pinterest.com/pin/437271445093996999/",
+      "name": "DESIGN 15",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/da/35/a2/da35a2f9d52d7d0a31b6008b29cc9ed5.jpg"
+    },
+    {
+      "id": "437271445093993752",
+      "width": 736,
+      "height": 981,
+      "dominantColor": "#c73957",
+      "file": "pinterest/ai-inspiration/16.webp",
+      "url": "https://www.pinterest.com/pin/437271445093993752/",
+      "name": "DESIGN 16",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/bc/2d/ac/bc2dacb8f09477aa276a78ee66227bf1.jpg"
+    },
+    {
+      "id": "437271445090254977",
+      "width": 474,
+      "height": 316,
+      "dominantColor": "#291a1b",
+      "file": "pinterest/ai-inspiration/17.webp",
+      "url": "https://www.pinterest.com/pin/437271445090254977/",
+      "name": "DESIGN 17",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/7b/96/5b/7b965b2f3faca7e28e267028ad320698.jpg"
+    },
+    {
+      "id": "437271445090793528",
+      "width": 736,
+      "height": 907,
+      "dominantColor": "#e3e3e3",
+      "file": "pinterest/ai-inspiration/18.webp",
+      "url": "https://www.pinterest.com/pin/437271445090793528/",
+      "name": "DESIGN 18",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/77/72/82/7772828fb661004c25176c5a83048f76.png"
+    },
+    {
+      "id": "437271445092659998",
+      "width": 734,
+      "height": 965,
+      "dominantColor": "#b9b6b7",
+      "file": "pinterest/ai-inspiration/19.webp",
+      "url": "https://www.pinterest.com/pin/437271445092659998/",
+      "name": "DESIGN 19",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/8b/74/f0/8b74f0f672e982ad2a8359a4ea5b602a.jpg"
+    },
+    {
+      "id": "437271445094013484",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#f5f5f5",
+      "file": "pinterest/ai-inspiration/20.webp",
+      "url": "https://www.pinterest.com/pin/437271445094013484/",
+      "name": "DESIGN 20",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/65/69/03/656903506b88963cb3cb643599c65c4b.jpg"
+    },
+    {
+      "id": "437271445092553482",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#b1b1b4",
+      "file": "pinterest/ai-inspiration/21.webp",
+      "url": "https://www.pinterest.com/pin/437271445092553482/",
+      "name": "DESIGN 21",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/5f/f8/02/5ff80255a1c12e37e8e26821383294bd.jpg"
+    },
+    {
+      "id": "437271445094019011",
+      "width": 736,
+      "height": 919,
+      "dominantColor": "#f4f4f4",
+      "file": "pinterest/ai-inspiration/22.webp",
+      "url": "https://www.pinterest.com/pin/437271445094019011/",
+      "name": "DESIGN 22",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/2c/68/02/2c6802d6525dd088bd54fb700175fa3c.jpg"
+    },
+    {
+      "id": "437271445093820341",
+      "width": 736,
+      "height": 920,
+      "dominantColor": "#6d5f3b",
+      "file": "pinterest/ai-inspiration/23.webp",
+      "url": "https://www.pinterest.com/pin/437271445093820341/",
+      "name": "DESIGN 23",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/1d/f1/58/1df15829f0afdcdfebb6f471dd661727.jpg"
+    },
+    {
+      "id": "437271445093098248",
+      "width": 736,
+      "height": 919,
+      "dominantColor": "#b9b3ab",
+      "file": "pinterest/ai-inspiration/24.webp",
+      "url": "https://www.pinterest.com/pin/437271445093098248/",
+      "name": "DESIGN 24",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/2f/2e/86/2f2e8655dcbc561315176173a64647f4.jpg"
+    },
+    {
+      "id": "437271445091648523",
+      "width": 591,
+      "height": 900,
+      "dominantColor": "#cacccb",
+      "file": "pinterest/ai-inspiration/25.webp",
+      "url": "https://www.pinterest.com/pin/437271445091648523/",
+      "name": "DESIGN 25",
+      "type": "DESIGN",
+      "source": "https://i.pinimg.com/originals/46/35/08/463508fb8e584fd90a03c115647783d3.jpg"
+    }
+  ]
+}

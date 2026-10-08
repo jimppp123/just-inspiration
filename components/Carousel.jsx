@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import gsap from "gsap";
+import InspirationControls from "./InspirationControls";
+import { startRenderLoop } from "./renderLoop";
+import MotionText from "./MotionText";
 
 import {
   vertexShader,
@@ -11,12 +14,12 @@ import {
   MAX_LINKS,
 } from "./shaders/planeShaders";
 import { buildAtlas } from "./ring/atlas";
-import { createMeta } from "./ring/meta";
 import { createSplitText } from "./ring/splitText";
-import { createTag, TAG_W, TAG_H } from "./ring/tag";
 import { createAsciiTexture } from "./ring/ascii";
 import { defaultParams } from "./ring/params";
-import { IMAGE_FILES, PROJECTS } from "./ring/projects";
+import { createCursorLens, cursorUniforms } from "./ring/cursorLens";
+import { PINTEREST_BOARD, PROJECTS } from "./ring/projects";
+import { requestBoard } from "./pinterest/boards";
 import {
   TAU,
   HALF_PI,
@@ -31,6 +34,32 @@ import {
 
 // The fan starts fractionally into the spread so the seed reads first.
 const FAN_START = 0.06;
+const RING_CAPACITY = Math.min(22, MAX_PLANES);
+const wrapSlot = (value, count) =>
+  ((((value + count / 2) % count) + count) % count) - count / 2;
+
+const deckStartFor = (index, total) =>
+  Math.min(
+    Math.floor(index / RING_CAPACITY) * RING_CAPACITY,
+    Math.max(0, total - RING_CAPACITY),
+  );
+
+const mergeProjects = (remote, local) => {
+  const localById = new Map(local.map((project) => [project.id, project]));
+  return remote.map((project) => {
+    const cached = localById.get(project.id);
+    if (!cached) return project;
+    return {
+      ...project,
+      file: cached.file,
+      thumb: cached.thumb ?? cached.file,
+      source: cached.source ?? project.source,
+      width: cached.width ?? project.width,
+      height: cached.height ?? project.height,
+      dominantColor: cached.dominantColor ?? project.dominantColor,
+    };
+  });
+};
 
 const blankTexture = () => {
   const t = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
@@ -38,36 +67,183 @@ const blankTexture = () => {
   return t;
 };
 
-export default function Carousel() {
-  const containerRef = useRef(null);
-  const listRef = useRef(null);
-  const itemsRef = useRef([]);
-  const loaderRef = useRef(null);
-  const liveRef = useRef(null);
-  const cutRef = useRef(null);
-  // Per side: the box that positions the lockup, the filtered wrapper the goo
-  // happens inside, the two rows that melt within it, and one more row outside
-  // for words carrying over unchanged. See ring/meta.js.
-  const metaRef = useRef({
-    left: { box: null, goo: null, layers: [], plain: null },
-    right: { box: null, goo: null, layers: [], plain: null },
+export default function Carousel({ onExplore, onFocus }) {
+  const openingShelf = useRef(false);
+  const [collection, setCollection] = useState({
+    board: PINTEREST_BOARD,
+    projects: PROJECTS,
   });
+  const [switchingBoard, setSwitchingBoard] = useState("");
+  const [syncingBoard, setSyncingBoard] = useState("");
+  const [deck, setDeck] = useState({
+    start: 0,
+    focus: 0,
+    instant: false,
+  });
+
+  const ringProjects = useMemo(
+    () => collection.projects.slice(deck.start, deck.start + RING_CAPACITY),
+    [collection.projects, deck.start],
+  );
+
+  useEffect(() => {
+    requestBoard(collection.board).catch(() => {
+      // Opening the shelf retries; the local seed remains usable offline.
+    });
+  }, [collection.board]);
+
+  const selectBoard = async (nextBoard, beforeCommit) => {
+    if (nextBoard.url === collection.board.url) return;
+    setSwitchingBoard(nextBoard.url);
+    try {
+      let nextCollection;
+      if (nextBoard.url === PINTEREST_BOARD.url) {
+        nextCollection = { board: PINTEREST_BOARD, projects: PROJECTS };
+      } else {
+        nextCollection = await requestBoard(nextBoard);
+      }
+      await beforeCommit?.();
+      setDeck({ start: 0, focus: 0, instant: false });
+      setCollection(nextCollection);
+    } finally {
+      setSwitchingBoard("");
+    }
+  };
+
+  const syncCurrentBoard = async () => {
+    if (
+      syncingBoard ||
+      collection.board.hasMore === false ||
+      collection.projects.length >= collection.board.totalPins
+    ) {
+      return;
+    }
+    const activeUrl = collection.board.url;
+    setSyncingBoard(activeUrl);
+    try {
+      const data = await requestBoard(collection.board);
+      setCollection((current) => {
+        if (current.board.url !== activeUrl) return current;
+        return {
+          board: data.board,
+          projects: mergeProjects(data.projects, current.projects),
+        };
+      });
+      setDeck((current) => ({ ...current, instant: true }));
+    } finally {
+      setSyncingBoard("");
+    }
+  };
+
+  const openExplore = async (previews) => {
+    if (openingShelf.current) return;
+    openingShelf.current = true;
+    const active = collection;
+    setSyncingBoard(active.board.url);
+    try {
+      let shelfCollection = active;
+      try {
+        const data = await requestBoard(active.board);
+        shelfCollection = {
+          board: data.board,
+          projects: mergeProjects(data.projects, active.projects),
+        };
+      } catch {
+        // A failed public request must not block the local fallback collection.
+      }
+      await onExplore?.(
+        shelfCollection.board,
+        shelfCollection.projects.map((project) => ({
+          ...project,
+          preview: previews?.get(project.id),
+        })),
+      );
+    } finally {
+      setSyncingBoard("");
+      openingShelf.current = false;
+    }
+  };
+
+  const selectProject = (index) => {
+    const start = deckStartFor(index, collection.projects.length);
+    setDeck({
+      start,
+      focus: index - start,
+      instant: true,
+    });
+  };
+
+  return (
+    <CarouselStage
+      key={collection.board.url}
+      board={collection.board}
+      projects={ringProjects}
+      allProjects={collection.projects}
+      deckStart={deck.start}
+      initialIndex={deck.focus}
+      instant={deck.instant}
+      switchingBoard={switchingBoard}
+      syncingBoard={syncingBoard === collection.board.url}
+      onSelectBoard={selectBoard}
+      onSyncBoard={syncCurrentBoard}
+      onSelectProject={selectProject}
+      onExplore={openExplore}
+      onFocusProject={onFocus}
+    />
+  );
+}
+
+function CarouselStage({
+  board,
+  projects,
+  allProjects,
+  deckStart,
+  initialIndex,
+  instant,
+  switchingBoard,
+  syncingBoard,
+  onSelectBoard,
+  onSyncBoard,
+  onSelectProject,
+  onExplore,
+  onFocusProject,
+}) {
+  const [ready, setReady] = useState(false);
+  const [wheelOpen, setWheelOpen] = useState(false);
+  const [current, setCurrent] = useState(initialIndex);
+  const controlsRef = useRef(null);
+  const focusRef = useRef(onFocusProject);
+  const containerRef = useRef(null);
+  const titleRef = useRef(null);
+  const liveRef = useRef(null);
+  useEffect(() => {
+    focusRef.current = onFocusProject;
+  }, [onFocusProject]);
 
   useEffect(() => {
     const container = containerRef.current;
-    const listEl = listRef.current;
-    const loaderEl = loaderRef.current;
     // Async work (atlas decode, the lil-gui import) can land after cleanup
     // under StrictMode's double mount. Everything deferred checks this.
     let disposed = false;
 
     const params = defaultParams();
+    params.count = projects.length;
+    params.imageOffset = initialIndex;
     // progress: the seed is born at screen centre
-    // launch:   the seed travels out to its place on the ring
-    // spread:   the rest peel off it and the ring draws
+    // launch:   the neighbours emerge from the seed
+    // spread:   the gallery opens to the left and right
     // spin:     whole-ring rotation, radians
-    // shift:    the ring moves off centre and resizes
-    const state = { progress: 0, launch: 0, spread: 0, spin: 0, shift: 0 };
+    // shift:    the side glass settles into place
+    const state = {
+      progress: 0,
+      launch: 0,
+      spread: 0,
+      spin: 0,
+      shift: 0,
+    };
+    // Kept outside state so picking a card cannot cancel the view tween.
+    const wheelView = { progress: 0 };
+    let showingWheel = false;
     // Read-only panel readouts, so an invalid ring is visible rather than
     // silent and the reference window can be matched to the live one.
     const info = { restingGap: 0, window: "", scale: 1, band: "wide" };
@@ -86,6 +262,7 @@ export default function Carousel() {
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
+    container.dataset.glassCursor = "true";
 
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
@@ -93,6 +270,7 @@ export default function Carousel() {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     const uniforms = {
+      ...cursorUniforms(THREE),
       uResolution: { value: new THREE.Vector2(1, 1) },
       uSize: { value: new THREE.Vector2(150, 100) },
       uRadius: { value: params.radius },
@@ -133,6 +311,9 @@ export default function Carousel() {
       uGlass: { value: new THREE.Vector4() },
       uFringe: { value: 0 },
       uSheen: { value: 0 },
+      uSideGlass: { value: new THREE.Vector4() },
+      uSideFinish: { value: new THREE.Vector2() },
+      uCardRound: { value: 0 },
       uMouse: { value: new THREE.Vector4() },
       uMelt: { value: new THREE.Vector4() },
       uAsciiTex: { value: asciiTexture },
@@ -147,14 +328,9 @@ export default function Carousel() {
       uFocusParticles: { value: new THREE.Vector4() },
       // flow phase in cells, spatial-motion multiplier
       uFocusParticleMotion: { value: new THREE.Vector2() },
-      uTagTex: {
-        value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1),
-      },
-      uTag: { value: new THREE.Vector4() },
-      uTagP: { value: new THREE.Vector4() },
-      uTagQ: { value: new THREE.Vector4() },
       uPage: { value: new THREE.Color("#fafafa") },
     };
+    const cursorLens = createCursorLens(uniforms);
 
     const mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
@@ -174,17 +350,6 @@ export default function Carousel() {
     scene.add(textGroup);
 
     const splitText = createSplitText(textGroup, params);
-    const tag = createTag(params, uniforms);
-    const meta = createMeta(
-      {
-        groups: metaRef.current,
-        list: listEl,
-        loader: loaderEl,
-        cut: cutRef.current,
-        live: liveRef.current,
-      },
-      params,
-    );
 
     /* ---------------------------------------------------------------- art */
     // The atlas is bound on frame one and fills in as images arrive, so the
@@ -199,9 +364,13 @@ export default function Carousel() {
     const readyWaiters = [];
     const whenReady = (fn) => (launchReady ? fn() : readyWaiters.push(fn));
 
-    const atlas = buildAtlas(IMAGE_FILES, (p) => {
-      if (!disposed) loadProg = p;
-    });
+    const atlas = buildAtlas(
+      projects,
+      (p) => {
+        if (!disposed) loadProg = p;
+      },
+      params.artTimeout,
+    );
 
     uniforms.uAtlas.value.dispose();
     atlas.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -232,10 +401,9 @@ export default function Carousel() {
     let planeK = 1;
     let radiusK = 1;
     let textK = 1;
+    let tightNow = false;
     // Kept as flags rather than resolved into values here, so anything picked
     // off them still answers to the dev panel between resizes.
-    let narrowNow = false;
-    let tightNow = false;
 
     const refit = () => {
       const byW = viewW / Math.max(1, params.refWidth);
@@ -246,7 +414,6 @@ export default function Carousel() {
 
       const narrow = viewW <= params.narrowAt;
       const tight = viewW <= params.tightAt;
-      narrowNow = narrow;
       tightNow = tight;
       planeK = narrow ? params.narrowPlane : 1;
       // The bands stack: tight sits inside narrow and pulls the arc back in
@@ -266,9 +433,6 @@ export default function Carousel() {
       textGroup.scale.set(k, k, 1);
     };
 
-    const styleMeta = () =>
-      meta.style({ textK, tight: tightNow, viewW: viewW });
-
     const resize = () => {
       viewW = container.clientWidth;
       viewH = container.clientHeight;
@@ -287,11 +451,8 @@ export default function Carousel() {
       bounds.top = rect.top;
     };
 
-    // styleMeta too, because the breakpoint bumps are steps that vw units
-    // cannot express on their own.
     const onResize = () => {
       resize();
-      styleMeta();
     };
 
     resize();
@@ -306,11 +467,13 @@ export default function Carousel() {
     let spinVel = 0; // rad/s
     let dragging = false;
     let dragPrevAngle = 0;
+    let dragPrevX = 0;
+    let laneSpacing = 1;
     let dragPrevTime = 0;
+    let autoResumeAt = 0;
 
-    // The snap is a phase, not a force that is always on: a flick coasts
-    // untouched, and once it is nearly spent the ring commits to a slot and
-    // runs itself in. snapTo is that slot, snapCap the speed it came in at.
+    // A flick coasts untouched, then commits to the nearest slot once most of
+    // its momentum is spent.
     let settling = false;
     let snapTo = 0;
     let snapCap = 0;
@@ -335,31 +498,51 @@ export default function Carousel() {
       picking = false;
     };
 
-    // Turn the ring until plane i faces front. A tween rather than a target
-    // handed to the snap: the snap is a run-in for a throw that is nearly
-    // spent and is shaped so it can only slow down, but a pick starts from a
-    // standstill and has to accelerate.
+    const openPlane = (i) => {
+      const scale = uniforms.uScale.value[i];
+      const project = projects[Math.round(scale.w)];
+      if (!project) return;
+      const pos = uniforms.uPos.value[i];
+      const angle = uniforms.uRot.value[i];
+      const halfW = (uniforms.uSize.value.x * scale.x) / 2;
+      const halfH = (uniforms.uSize.value.y * scale.y) / 2;
+      const width =
+        Math.abs(Math.cos(angle)) * halfW * 2 +
+        Math.abs(Math.sin(angle)) * halfH * 2;
+      const height =
+        Math.abs(Math.sin(angle)) * halfW * 2 +
+        Math.abs(Math.cos(angle)) * halfH * 2;
+      focusRef.current?.(project, {
+        x: bounds.left + viewW / 2 + pos.x - width / 2,
+        y: bounds.top + viewH / 2 - pos.y - height / 2,
+        width,
+        height,
+        src: atlas.sources[Math.round(scale.w)],
+        imageWidth: atlas.dimensions[Math.round(scale.w)].width,
+        imageHeight: atlas.dimensions[Math.round(scale.w)].height,
+      });
+    };
+
+    // Turn the ring until plane i faces front.
     const pick = (i) => {
       const slot = TAU / Math.round(params.count);
-      // Spread, plane i sits at seed + signedOffset(i) * slot + spin.
       const base = frontAngle - params.seed * DEG - signedOffset(i) * slot;
-      // Nearest equivalent winding, so it takes the short way round rather
-      // than unwinding whole turns. Every card is within half a ring.
       const target = base + Math.round((state.spin - base) / TAU) * TAU;
-
       const slots = Math.abs(target - state.spin) / slot;
-      // Already there. Opening the project belongs here eventually.
       if (slots < 0.01) return;
 
       spinVel = 0;
       settling = false;
+      autoResumeAt = performance.now() + params.autoResume * 1000;
       picking = true;
       gsap.killTweensOf(state);
       gsap.to(state, {
         spin: target,
         // Root of the distance, not linear: a card eight slots round should
         // take longer than its neighbour but not eight times longer.
-        duration: params.pickTime * Math.sqrt(Math.max(1, slots)),
+        duration: reducedMotion.matches
+          ? 0
+          : params.pickTime * Math.sqrt(Math.max(1, slots)),
         ease: params.pickEase,
         onComplete: () => {
           picking = false;
@@ -425,14 +608,15 @@ export default function Carousel() {
       e.preventDefault();
       // Trackpads send horizontal deltas too; take whichever dominates.
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      // Fresh input hands the ring back to its own momentum.
       stopPick();
       settling = false;
+      autoResumeAt = performance.now() + params.autoResume * 1000;
       spinVel += d * params.scrollSpeed;
       spinVel = Math.max(-params.maxSpeed, Math.min(params.maxSpeed, spinVel));
     };
 
     const onPointerDown = (e) => {
+      if (e.button !== 0) return;
       pointerTravel = 0;
       travelX = e.clientX;
       travelY = e.clientY;
@@ -443,7 +627,9 @@ export default function Carousel() {
       dragging = true;
       settling = false;
       spinVel = 0;
+      autoResumeAt = Infinity;
       dragPrevAngle = pointerAngle(e);
+      dragPrevX = e.clientX;
       dragPrevTime = performance.now();
       renderer.domElement.setPointerCapture?.(e.pointerId);
     };
@@ -465,16 +651,26 @@ export default function Carousel() {
 
       const a = pointerAngle(e);
       let delta = a - dragPrevAngle;
-      // Short way round, so crossing the +/-pi seam does not snap.
       if (delta > Math.PI) delta -= TAU;
       if (delta < -Math.PI) delta += TAU;
 
-      const turn = delta * params.dragSpeed;
-      state.spin += turn;
-
+      const laneTurn =
+        -((e.clientX - dragPrevX) / laneSpacing) *
+        (TAU / Math.round(params.count));
       const now = performance.now();
-      spinVel = turn / (Math.max(8, now - dragPrevTime) / 1000);
+      const turn =
+        (laneTurn * (1 - wheelView.progress) + delta * wheelView.progress) *
+        params.dragSpeed;
+      state.spin += turn;
+      spinVel = Math.max(
+        -params.maxSpeed,
+        Math.min(
+          params.maxSpeed,
+          turn / (Math.max(8, now - dragPrevTime) / 1000),
+        ),
+      );
       dragPrevAngle = a;
+      dragPrevX = e.clientX;
       dragPrevTime = now;
     };
 
@@ -486,17 +682,82 @@ export default function Carousel() {
       endHold();
       if (!dragging) return;
       dragging = false;
+      autoResumeAt = performance.now() + params.autoResume * 1000;
       renderer.domElement.releasePointerCapture?.(e.pointerId);
     };
 
     // A drag ends in a click too, so only a near-stationary press counts.
-    // `over` comes from the same hit test that decides the tag, so a click
-    // only ever lands on the card the tag was offering.
-    const onClick = () => {
-      if (!interactive || pointerTravel >= 5 || over < 0) return;
-      pick(over);
+    // `over` comes from the same hit test that activates the dot cursor.
+    const onClick = (e) => {
+      if (!interactive || pointerTravel >= 5) return;
+      trackPointer(e);
+      layout(0);
+      if (over >= 0) openPlane(over);
     };
 
+    const toggleWheel = () => {
+      if (!interactive) return;
+      showingWheel = !showingWheel;
+      setWheelOpen(showingWheel);
+      pointer.inside = false;
+      stopPick();
+      spinVel = 0;
+      settling = false;
+      autoResumeAt =
+        performance.now() + (params.wheelTime + params.autoResume) * 1000;
+      gsap.to(wheelView, {
+        progress: showingWheel ? 1 : 0,
+        duration: reducedMotion.matches ? 0 : params.wheelTime,
+        ease: params.wheelEase,
+        overwrite: true,
+      });
+    };
+
+    const pickProject = (projectIndex) => {
+      if (!interactive) return;
+      const planeIndex = uniforms.uScale.value.findIndex(
+        (scale, index) =>
+          index < params.count && Math.round(scale.w) === projectIndex,
+      );
+      if (planeIndex >= 0) pick(planeIndex);
+    };
+    controlsRef.current = {
+      toggleWheel,
+      pickProject,
+      shelfPreviews: () =>
+        new Map(
+          projects
+            .map((project, index) => [
+              project.id,
+              { src: atlas.sources[index], ...atlas.dimensions[index] },
+            ])
+            .filter(([, preview]) => preview.width > 3),
+        ),
+    };
+    const onKeyDown = (event) => {
+      if (
+        !interactive ||
+        document.querySelector("dialog[open]") ||
+        event.target.closest("input, textarea, select, [contenteditable]")
+      )
+        return;
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        const next =
+          (shown + (event.key === "ArrowRight" ? 1 : -1) + imageCount) %
+          imageCount;
+        pickProject(next);
+      }
+      if (
+        event.key === "Escape" &&
+        showingWheel &&
+        !document.querySelector("dialog[open]")
+      ) {
+        toggleWheel();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
     container.addEventListener("wheel", onWheel, { passive: false });
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
@@ -539,20 +800,15 @@ export default function Carousel() {
       );
     };
 
-    /* ------------------------------------------------------- load counter */
-    // Reads whichever of the two is further behind: the art arriving, or the
-    // seed's own birth. Both have to finish before there is anything to
-    // launch, so counting bytes alone leaves the number sitting on 100 waiting
-    // for a condition nobody told the viewer about.
+    /* ------------------------------------------------------- load gate */
+    // Keep the seed at centre until both its birth and the artwork are ready.
     const loading = { shown: 0 };
 
     const tickLoader = (dt) => {
       const target = Math.min(loadProg, clamp01(state.progress));
       loading.shown += (target - loading.shown) * chase(dt, params.loaderChase);
 
-      // Never 000; that reads as nothing happening.
       const n = Math.min(100, Math.max(1, Math.round(loading.shown * 100)));
-      if (loaderEl) loaderEl.textContent = String(n).padStart(3, "0");
 
       if (!launchReady && n >= 100) {
         launchReady = true;
@@ -595,93 +851,117 @@ export default function Carousel() {
     let shown = -1;
     let announced = -1;
     let over = -1;
-    let tagUp = false;
     let particleCard = -1;
     let particleAmount = 0;
     let particleFlow = 0;
 
-    const paintList = () => {
-      const items = itemsRef.current;
-      for (let i = 0; i < items.length; i++) {
-        const el = items[i];
-        if (!el) continue;
-        const on = i === shown;
-        el.style.opacity = on ? "1" : "0.2";
-        if (on) el.setAttribute("aria-current", "true");
-        else el.removeAttribute("aria-current");
-      }
-    };
-
     const layout = (dt) => {
-      const count = Math.round(params.count);
+      const count = Math.min(projects.length, Math.round(params.count));
       uniforms.uCount.value = count;
 
       const step = TAU / count;
       const spread = clamp01(state.spread);
-
-      // Band values are picked per frame rather than latched on resize, so
-      // dragging any of these sliders shows up straight away.
-      const endScale = narrowNow ? params.narrowEndScale : params.endScale;
-      const posX = tightNow
-        ? params.tightPosX
-        : narrowNow
-          ? params.narrowPosX
-          : params.posX;
-
-      // The stage transform. Everything in plane-pixels goes through g, which
-      // is why the window fit rides in here rather than on a dozen params.
       const shift = clamp01(state.shift);
-      const g = (1 + (endScale - 1) * shift) * fit;
-      const cx = posX * viewW * 0.5 * shift;
-      const cy = params.posY * viewH * 0.5 * shift;
+      const glassEntry = smoothstep(params.laneGlassAt, 1, shift);
+      const wheelOuterPx = Math.max(
+        1,
+        Math.min(viewW, viewH) * params.wheelFill - params.wheelMargin,
+      );
+      const wheelOuterUnits =
+        params.ringRadius * radiusK + params.planeSize * planeK * 0.62;
+      const wheelG = wheelOuterPx / wheelOuterUnits;
+      const amount = wheelView.progress * shift;
+      // Keep horizontal sampling monotonic even at the smallest phone scale.
+      const sidePull = Math.min(
+        params.laneSidePull * fit,
+        viewW * params.laneSideBand * 0.42,
+      );
+      // Hit tests read the same inverse warp as glassBend() in the shader.
+      const probePoint = { x: pointer.x, y: pointer.y };
+      if (params.glass) {
+        const band =
+          (probePoint.y > 0 ? params.bandTop : params.bandBottom) * viewH;
+        const t = clamp01(
+          (Math.abs(probePoint.y) - viewH * 0.5 + band) / Math.max(band, 0.01),
+        );
+        const bend = 1 - Math.sqrt(Math.max(0, 1 - t * t));
+        probePoint.y -=
+          Math.sign(probePoint.y) *
+          bend *
+          (params.refract +
+            Math.sin(probePoint.x * params.rippleFreq) * params.ripple);
+        probePoint.x *= 1 - bend * params.squeeze;
+        const edgeT = clamp01(
+          (Math.abs(probePoint.x) - viewW * (0.5 - params.laneSideBand)) /
+            Math.max(viewW * params.laneSideBand, 1),
+        );
+        const side =
+          edgeT *
+          edgeT *
+          edgeT *
+          (edgeT * (edgeT * 6 - 15) + 10) *
+          (1 - amount) *
+          glassEntry;
+        probePoint.x -= Math.sign(probePoint.x) * side * sidePull;
+        probePoint.y /= 1 + side * params.laneSideFlare;
+      }
+      const galleryW = Math.min(
+        params.laneWidth * fit * planeK,
+        viewW * params.laneWidthFill,
+        viewH * params.laneHeightFill * params.laneAspect,
+      );
+      const galleryH = galleryW / params.laneAspect;
+      laneSpacing =
+        galleryW * (tightNow ? params.laneTightSpacing : params.laneSpacing);
+      const entryScale =
+        params.laneEnterScale + (1 - params.laneEnterScale) * spread;
+      const galleryG = galleryW / params.planeSize;
+      const g = galleryG + (wheelG - galleryG) * amount;
+      frontAngle = 0;
       const assembleOn =
         params.assemble &&
         viewW > params.assembleFrom &&
         !reducedMotion.matches;
       // The gathered image earns a larger beat at centre, then contracts as
-      // it launches to the ring. Once spread begins, all geometry is back on
-      // the ring's original scale.
+      // it launches to the ring.
       const assembleBoost = assembleOn
         ? 1 +
           (params.assembleCardScale - 1) *
             (1 - smoothstep(0.05, 0.82, state.launch))
         : 1;
 
-      // Screen-space centre, for pointer maths. World Y is up, page Y is down.
-      ringCentre.x = viewW * 0.5 + cx;
-      ringCentre.y = viewH * 0.5 - cy;
-      // A plane faces front when the ring centre, that plane and the middle of
-      // the screen line up. Before the stage move there is no front, so 3
-      // o'clock stands in.
-      frontAngle = cx !== 0 || cy !== 0 ? Math.atan2(-cy, -cx) : 0;
-
-      // Anything measured in plane long edges — hover reach, thread reach,
-      // side falloff — comes off W, so the narrow bump reaches them for free.
-      const W = params.planeSize * planeK * g * assembleBoost;
-      const H = W / 1.5;
+      const W =
+        (galleryW + (params.planeSize * planeK * wheelG - galleryW) * amount) *
+        assembleBoost *
+        entryScale;
+      const H =
+        (galleryH +
+          ((params.planeSize * planeK * wheelG) / 1.5 - galleryH) * amount) *
+        assembleBoost *
+        entryScale;
       uniforms.uSize.value.set(W, H);
-      // Tracks the plane, not the window: a card 25% bigger with the same
-      // corner is a differently shaped card, not a bigger one.
-      uniforms.uRadius.value = params.radius * planeK * g;
+      uniforms.uRadius.value = params.radius * g;
+
+      // Screen-space centre, for pointer maths. World Y is up, page Y is down.
+      ringCentre.x = viewW * 0.5;
+      ringCentre.y = viewH * 0.5;
 
       // Radial: the long edge points outward, so a plane's reach toward its
       // neighbour is its short axis and the facing edges are the long ones.
-      const sepExtent = params.radial ? H : W;
-      const faceEdge = params.radial ? W : H;
+      const sepExtent = W + ((params.radial ? H : W) - W) * amount;
+      const faceEdge = H + ((params.radial ? W : H) - H) * amount;
 
-      const R = params.ringRadius * radiusK * g;
-      const restingGap = 2 * R * Math.sin(step / 2) - sepExtent;
+      const R = params.ringRadius * radiusK * wheelG;
+      const restingGap =
+        (laneSpacing - (galleryW * (1 + params.laneSideScale)) / 2) *
+          (1 - amount) +
+        (2 * R * Math.sin(step / 2) - sepExtent) * amount;
       info.restingGap = Math.round((restingGap / g) * 10) / 10;
-      // The whole stretch plays out across this, so it is the yardstick.
       const finalSep = Math.max(1, restingGap);
 
-      // Every generation is in flight at once, offset by a small phase, so
-      // this is one continuous unfurl and not a queue of separate pops.
       const maxN = Math.max(1, Math.abs(signedOffset(count - 1)));
       const dur = Math.max(0.1, 1 - FAN_START - params.stagger);
 
-      // Cumulative, so an unborn plane sits exactly on top of its parent and
-      // is peeled out of it one ring step at a time.
       cum[0] = 0;
       for (let n = 1; n <= maxN; n++) {
         const start = FAN_START + ((n - 1) / maxN) * params.stagger;
@@ -692,9 +972,6 @@ export default function Carousel() {
       }
 
       const seedAngle = params.seed * DEG;
-      // The seed is born flat at centre then rides out. Applied as the radius
-      // rather than an offset on plane 0, so scrubbing the timeline stays
-      // consistent — the unborn are stacked on the seed either way.
       const launch = easeInOutCubic(clamp01(state.launch));
       const Rnow = R * launch;
 
@@ -709,16 +986,11 @@ export default function Carousel() {
       const kRise = chase(dt, params.grab);
       const kFall = chase(dt, params.release);
 
-      // Nearest plane to front, in angle rather than screen distance: two
-      // planes can sit equally far from the middle, but only one faces it.
+      // Nearest plane to front, in angle rather than screen distance.
       let frontI = -1;
       let frontD = 1e9;
       let frontCell = 0;
 
-      // Art is dealt by ring slot, not plane index. Planes are numbered in fan
-      // order, so dealing by index puts every other project side by side and
-      // steps the column two names per slot. Negated because turning the ring
-      // forward walks the front slot backwards.
       const imgOff = Math.round(params.imageOffset);
       const cellOf = (slot) =>
         imageCount > 0
@@ -726,7 +998,7 @@ export default function Carousel() {
           : 0;
 
       // Which card the cursor is on. Independent of the hover falloff above:
-      // turning the goo off should not take the tag with it.
+      // turning the goo off should not disable click feedback.
       const probe = pointer.inside && pointer.seeded && interactive;
       let overI = -1;
       // Which card the rest are standing aside for, from last frame.
@@ -739,13 +1011,23 @@ export default function Carousel() {
         const cell = cellOf(sIdx);
 
         const angle = seedAngle + Math.sign(sIdx) * step * cum[n] + state.spin;
-        const px = Math.cos(angle) * Rnow + cx;
-        const py = Math.sin(angle) * Rnow + cy;
+        const offset = wrapSlot(sIdx + state.spin / step, count);
+        const emphasis = Math.exp(
+          -Math.pow(offset, 2) * params.laneFocusFalloff,
+        );
+        const laneScale =
+          params.laneSideScale + (1 - params.laneSideScale) * emphasis;
+        const depthScale = laneScale + (1 - laneScale) * amount;
+        const laneX = -offset * laneSpacing * spread;
+        const px = laneX + (Math.cos(angle) * Rnow - laneX) * amount;
+        const py = Math.sin(angle) * Rnow * amount;
+        const cardScale = depthScale;
         rest[i].set(px, py);
 
-        // atan2 of the difference wraps to +/-pi, so the seam costs nothing.
         const da = angle - frontAngle;
-        const toFront = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+        const toFront =
+          Math.abs(offset) * (1 - amount) +
+          Math.abs(Math.atan2(Math.sin(da), Math.cos(da))) * amount;
         if (toFront < frontD) {
           frontD = toFront;
           frontI = i;
@@ -808,33 +1090,33 @@ export default function Carousel() {
           px + leanX[i] + pushX,
           py + leanY[i] + pushY,
         );
+        const ringRot = params.radial ? angle : angle + HALF_PI;
         uniforms.uRot.value[i] =
-          (params.radial ? angle : angle + HALF_PI) * launch;
+          Math.atan2(Math.sin(ringRot), Math.cos(ringRot)) * launch * amount;
 
-        // The seed grows over its whole birth. The others are already there,
-        // merged inside their parent, so they reach full size early and spend
-        // the rest of their travel pulling away.
-        const sx =
-          i === 0
+        const sx = assembleOn
+          ? i === 0
+            ? easeOutCubic(clamp01(assembleOn ? (u - 0.5) / 0.46 : u / 0.7))
+            : easeOutCubic(clamp01(u / 0.34))
+          : easeOutCubic(u);
+        const sy = assembleOn
+          ? i === 0
             ? easeOutCubic(
-                clamp01(assembleOn ? (u - 0.5) / 0.46 : u / 0.7),
+                clamp01(assembleOn ? (u - 0.58) / 0.38 : (u - 0.18) / 0.74),
               )
-            : easeOutCubic(clamp01(u / 0.34));
-        const sy =
-          i === 0
-            ? easeOutCubic(
-                clamp01(
-                  assembleOn ? (u - 0.58) / 0.38 : (u - 0.18) / 0.74,
-                ),
-              )
-            : easeOutCubic(clamp01((u - 0.06) / 0.36));
+            : easeOutCubic(clamp01((u - 0.06) / 0.36))
+          : sx;
         // The swell rides on the birth scale rather than uSize, so a plane
         // under the cursor grows about its own centre.
-        const sw = swellOf(i);
+        const sw = swellOf(i) * cardScale;
+        const aspect = atlas.aspects[cell];
+        const aspectX = Math.min(1, (H * aspect) / W);
+        const aspectY = Math.min(1, W / (H * aspect));
         uniforms.uScale.value[i].set(
-          sx * sw,
-          sy * sw,
-          1 - params.sideDim * sideF[i],
+          sx * sw * aspectX,
+          sy * sw * aspectY,
+          (1 - params.sideDim * sideF[i]) *
+            (1 - params.laneSideDim * (1 - emphasis) * (1 - amount) * shift),
           cell,
         );
 
@@ -843,13 +1125,13 @@ export default function Carousel() {
         // Cards never overlap once formed, so the first hit is the only hit.
         if (probe && overI < 0) {
           const rot = uniforms.uRot.value[i];
-          const qx = cursor.x - (px + leanX[i] + pushX);
-          const qy = cursor.y - (py + leanY[i] + pushY);
+          const qx = probePoint.x - (px + leanX[i] + pushX);
+          const qy = probePoint.y - (py + leanY[i] + pushY);
           const cr = Math.cos(rot);
           const sr = Math.sin(rot);
           if (
-            Math.abs(qx * cr + qy * sr) <= W * 0.5 * sx * sw &&
-            Math.abs(-qx * sr + qy * cr) <= H * 0.5 * sy * sw
+            Math.abs(qx * cr + qy * sr) <= W * 0.5 * sx * sw * aspectX &&
+            Math.abs(-qx * sr + qy * cr) <= H * 0.5 * sy * sw * aspectY
           ) {
             overI = i;
           }
@@ -867,6 +1149,20 @@ export default function Carousel() {
       }
 
       over = overI;
+      const clickable = over >= 0 && !coarse && !dragging;
+      if (container.dataset.cursorActive !== String(clickable))
+        container.dataset.cursorActive = String(clickable);
+      cursorLens.update(
+        pointer.x,
+        pointer.y,
+        clickable && pointer.inside && interactive,
+        dt,
+        false,
+        reducedMotion.matches,
+      );
+      const cursorRendered = String(uniforms.uCursor.value.w > 0);
+      if (container.dataset.cursorRendered !== cursorRendered)
+        container.dataset.cursorRendered = cursorRendered;
 
       // The ring itself never owns particles. A single latched hover card
       // does, so its field can finish flowing out after the pointer leaves
@@ -940,53 +1236,23 @@ export default function Carousel() {
         reducedMotion.matches ? 0 : 1,
       );
 
-      // Both tests, not either: the width covers a small window on a mouse,
-      // `coarse` covers a large tablet. Re-tested every frame so a window
-      // dragged across the threshold resolves instead of stranding the tag.
-      const wantTag = over >= 0 && !coarse && viewW > params.tagFrom;
-      if (wantTag !== tagUp) {
-        tagUp = wantTag;
-        tag.show(wantTag);
-      }
       // Off the resting centre, so a card being pushed cannot chase its own
       // shadow next frame.
       if (over >= 0) focusPos.copy(rest[over]);
 
-      // Carried every frame whether present or not, so the tag is already in
-      // the right place the moment it is asked to appear.
-      uniforms.uTag.value.set(
-        cursor.x + params.tagX,
-        cursor.y + params.tagY,
-        tag.box.sx,
-        tag.box.sy,
-      );
-      uniforms.uTagP.value.set(
-        TAG_W * 0.5,
-        TAG_H * 0.5,
-        TAG_H * 0.5,
-        params.tagRefract,
-      );
-      uniforms.uTagQ.value.set(params.tagFrost, params.tagRim, 0, 0);
-
-      // The column and the meta name whatever cell the front plane is wearing,
-      // read off the same deal the shader was handed rather than recomputed —
-      // so the highlight cannot disagree with the art.
       if (frontI >= 0 && imageCount > 0 && frontCell !== shown) {
         shown = frontCell;
-        paintList();
       }
 
       /* ---- honey ---- */
-      // One bridge per parent/child pair, in ring order. Deliberately none
-      // closing the circle while the fan is opening: those two planes were
-      // never merged, so there is nothing between them to stretch.
-      order.sort((a, b) => signedOffset(a) - signedOffset(b));
+      order.sort((a, b) =>
+        amount > 0.5
+          ? signedOffset(a) - signedOffset(b)
+          : rest[a].x - rest[b].x,
+      );
 
       const edgeHalf = faceEdge * 0.5 * params.thread;
-      // Once closed the seam pair are neighbours like any other, and without a
-      // link the one gap the fan never opened is the only one the cursor
-      // cannot web back together.
-      const closed = spread > 0.995 && count > 2;
+      const closed = amount > 0.995 && spread > 0.995 && count > 2;
       const linkCount = Math.min(closed ? count : count - 1, MAX_LINKS);
 
       for (let l = 0; l < linkCount; l++) {
@@ -1002,8 +1268,12 @@ export default function Carousel() {
         // ones. The unfurl's response to separation is ferociously steep — a
         // couple of percent of the gap is already a slab — so letting the lean
         // and the swell in turns a hover into a puzzle-piece join.
-        const shrinkA = (params.radial ? scA.y : scA.x) / swellOf(ia);
-        const shrinkB = (params.radial ? scB.y : scB.x) / swellOf(ib);
+        const shrinkA =
+          (scA.x * (1 - amount) + (params.radial ? scA.y : scA.x) * amount) /
+          swellOf(ia);
+        const shrinkB =
+          (scB.x * (1 - amount) + (params.radial ? scB.y : scB.x) * amount) /
+          swellOf(ib);
         const sep =
           rest[ia].distanceTo(rest[ib]) - sepExtent * 0.5 * (shrinkA + shrinkB);
 
@@ -1025,11 +1295,25 @@ export default function Carousel() {
         // thread would be there before the pull was.
         webF[l] += (fl - webF[l]) * (fl > webF[l] ? kRise : kFall);
 
-        const w = Math.max(Math.pow(1 - v, params.thin), params.web * webF[l]);
+        const entryThread =
+          amount + (1 - amount) * (1 - smoothstep(0.75, 1, spread));
+        const birthThread = Math.pow(1 - v, params.thin) * entryThread;
+        // A newborn cannot support a bridge taller than its own facing edge.
+        // Full-size bridges here leave broad streaks beside zero-height cards.
+        const bornFace = Math.min(
+          (scA.y * (1 - amount) + (params.radial ? scA.x : scA.y) * amount) /
+            swellOf(ia),
+          (scB.y * (1 - amount) + (params.radial ? scB.x : scB.y) * amount) /
+            swellOf(ib),
+        );
+        const w =
+          Math.max(birthThread, params.web * webF[l]) *
+          (1 - Math.sin(amount * Math.PI)) *
+          bornFace;
         // dissolve carries the radius past zero and out of antialiasing range
         // so the thread fades instead of bottoming out as a half-covered
         // hairline. In screen px, so unlike edgeHalf it does not carry g.
-        const rEnd = edgeHalf * w - params.dissolve;
+        const rEnd = w > 0.001 ? edgeHalf * w - params.dissolve : -100;
         const rMid = rEnd * (1 - (1 - params.pinch) * smoothstep(0, 0.7, v));
 
         uniforms.uLinkA.value[l].copy(ca);
@@ -1087,6 +1371,20 @@ export default function Carousel() {
       );
       uniforms.uFringe.value = on ? params.fringe : 0;
       uniforms.uSheen.value = on ? params.sheen : 0;
+      uniforms.uSideGlass.value.set(
+        params.laneSideBand * viewW,
+        sidePull,
+        params.laneSideFlare,
+        on ? (1 - amount) * glassEntry : 0,
+      );
+      uniforms.uSideFinish.value.set(
+        params.laneEdgeSoftness * fit,
+        params.laneEdgeDispersion * fit,
+      );
+      uniforms.uCardRound.value = state.progress;
+      if (titleRef.current) {
+        titleRef.current.style.top = `${viewH * params.laneTitleY + (viewH * 0.5 - viewH * params.laneTitleY) * amount}px`;
+      }
     };
 
     /* ------------------------------------------------------- entry timeline */
@@ -1096,10 +1394,16 @@ export default function Carousel() {
 
     const build = () => {
       interactive = false;
+      setReady(false);
+      setWheelOpen(false);
+      showingWheel = false;
+      gsap.killTweensOf(wheelView);
+      wheelView.progress = 0;
       announced = -1;
       spinVel = 0;
       dragging = false;
       settling = false;
+      autoResumeAt = 0;
       particleCard = -1;
       particleAmount = 0;
       particleFlow = 0;
@@ -1108,15 +1412,26 @@ export default function Carousel() {
       // same property before it starts.
       stopPick();
 
+      if (instant || reducedMotion.matches) {
+        state.progress = 1;
+        state.launch = 1;
+        state.spread = 1;
+        state.spin = 0;
+        state.shift = 1;
+        for (const uniform of splitText.chars) uniform.value = 1;
+        for (const uniform of splitText.fades) uniform.value = 0;
+        interactive = true;
+        setReady(true);
+        return null;
+      }
+
       const gen = ++entryGen;
-      // Only the first run has anything to wait for; a replay should not flash
-      // the counter back up.
-      if (loaderEl) gsap.set(loaderEl, { opacity: launchReady ? 0 : 1 });
 
       const tl = gsap.timeline({
         delay: 0.25,
         onComplete: () => {
           interactive = true;
+          setReady(true);
         },
       });
 
@@ -1129,120 +1444,36 @@ export default function Carousel() {
         { progress: 0, launch: 0, spread: 0, spin: 0, shift: 0 },
         {
           progress: 1,
-          duration: assembleMotion ? params.assembleTime : 0.65,
+          duration: assembleMotion
+            ? params.assembleTime
+            : params.entryBirthTime,
           ease: assembleMotion ? params.assembleEase : "power1.out",
         },
       );
 
-      // Formed and sitting at centre. It stays there until the counter lands,
-      // so the ring can never unfurl into cards with nothing on them. Usually
-      // there is nothing left to wait for by the time the playhead arrives —
-      // the counter is paced against this same birth.
+      // Loading stays internal, so the gallery never opens onto empty cards.
       tl.addPause(">", () => {
         whenReady(() => {
           gsap.delayedCall(params.holdAfter, () => {
             if (disposed || gen !== entryGen) return;
             tl.resume();
-            if (loaderEl) {
-              gsap.to(loaderEl, {
-                opacity: 0,
-                duration: params.loaderOut,
-                ease: "power2.in",
-              });
-            }
           });
         });
       });
 
       tl.to(state, {
         launch: 1,
-        duration: params.launchTime,
-        ease: "power2.inOut",
+        spread: 1,
+        shift: 1,
+        duration: params.laneRevealTime,
+        ease: params.spreadEase,
       });
-
-      // Absolute positions from here, so the stage can be dropped anywhere
-      // inside the spread rather than only after it.
-      const spreadStart = tl.duration() - 0.15;
-      tl.to(
-        state,
-        { spread: 1, duration: params.spreadTime, ease: params.spreadEase },
-        spreadStart,
-      );
-
-      const stageStart = spreadStart + params.stageAt * params.spreadTime;
-      tl.to(
-        state,
-        {
-          spin: params.spinTurns * TAU,
-          duration: params.spinTime,
-          ease: params.spinEase,
-        },
-        stageStart + params.spinDelay,
-      );
-      tl.to(
-        state,
-        { shift: 1, duration: params.moveTime, ease: params.moveEase },
-        stageStart + params.moveDelay,
-      );
-
-      const textStart = spreadStart + params.textAt * params.spreadTime;
-
-      if (splitText.chars.length) {
-        tl.fromTo(
-          splitText.chars,
-          { value: 0 },
-          {
-            value: 1,
-            duration: params.textTime,
-            ease: params.textEase,
-            stagger: params.textStagger,
-          },
-          textStart,
-        );
-      }
-
-      // The heading has done its job by the time the ring is in place, and
-      // from then on it is behind the front card. Timed off whichever staging
-      // move finishes last, so it still lands with them if either is retimed.
-      if (params.textOut && splitText.fades.length) {
-        const landed = Math.max(
-          stageStart + params.spinDelay + params.spinTime,
-          stageStart + params.moveDelay + params.moveTime,
-        );
-        tl.fromTo(
-          splitText.fades,
-          { value: 1 },
-          {
-            value: 0,
-            duration: params.textOutTime,
-            ease: params.textOutEase,
-            stagger: params.textStagger,
-          },
-          Math.max(0, landed + params.textOutAt),
-        );
-      }
-
-      // The column arrives with the heading, by which point there is a front
-      // for it to be reading.
-      if (listEl) {
-        tl.fromTo(
-          listEl,
-          { opacity: 0 },
-          { opacity: 1, duration: params.textTime, ease: params.textEase },
-          textStart,
-        );
-      }
 
       return tl;
     };
 
-    tag.build();
-    tag.load(() => {
-      if (!disposed) tag.build();
-    });
-    styleMeta();
-
     let tl = null;
+    let entryStarted = false;
     const replay = () => {
       tl?.kill();
       tl = build();
@@ -1256,17 +1487,29 @@ export default function Carousel() {
     // and that was invisible; on a cold one they arrive late and it reads as
     // the page going blank and starting over.
     const startEntry = () => {
-      if (disposed || tl) return;
+      if (disposed || entryStarted) return;
+      entryStarted = true;
       splitText.build();
-      tag.build();
-      styleMeta();
       replay();
     };
 
-    // fonts.ready is reliable, but nothing here is worth a permanently blank
-    // page if it ever is not.
+    // Canvas-only glyphs do not trigger CSS font loading. Request the actual
+    // Chinese runs before measuring them or baking them into textures.
+    const fontsReady = document.fonts
+      ? Promise.all([
+          document.fonts.load(
+            `${params.textWeight} ${params.textSize}px "${params.textFont}"`,
+            params.text,
+          ),
+          document.fonts.ready,
+        ])
+      : Promise.resolve();
+    // A missing font must not keep the entry permanently blank.
     const fontFallback = setTimeout(startEntry, 3000);
-    Promise.all([document.fonts?.ready ?? Promise.resolve(), atlas.first])
+    Promise.all([
+      fontsReady,
+      instant || reducedMotion.matches ? atlas.ready : atlas.first,
+    ])
       .then(startEntry)
       .catch(startEntry);
 
@@ -1284,15 +1527,9 @@ export default function Carousel() {
             actions: {
               replay,
               refit,
-              styleMeta,
-              setThreshold: meta.setThreshold,
               rebuildText: () => {
                 splitText.build();
                 replay();
-              },
-              rebuildTag: () => tag.build(),
-              replayMeta: () => {
-                announced = -1;
               },
               adoptWindow: () => {
                 params.refWidth = Math.round(viewW);
@@ -1311,105 +1548,126 @@ export default function Carousel() {
     /* ---------------------------------------------------------------- loop */
     const start = performance.now();
     let prevT = start;
+    // #region debug-point A:entry-samples
+    let debugEntrySample = 0;
+    // #endregion
 
-    renderer.setAnimationLoop(() => {
-      const now = performance.now();
-      // Clamped, so a backgrounded tab does not resume with one huge step.
-      const dt = Math.min(0.05, (now - prevT) / 1000);
-      prevT = now;
-      uniforms.uTime.value = (now - start) * 0.001;
+    const stopRendering = startRenderLoop(
+      renderer,
+      () => {
+        const now = performance.now();
+        // Clamped, so a backgrounded tab does not resume with one huge step.
+        const dt = Math.min(0.05, (now - prevT) / 1000);
+        prevT = now;
+        uniforms.uTime.value = (now - start) * 0.001;
 
-      if (interactive && !dragging && !picking) {
-        state.spin += spinVel * dt;
-        spinVel *= Math.pow(params.damping, dt * 60);
+        if (interactive && !dragging && !picking) {
+          const autoRunning =
+            !reducedMotion.matches &&
+            now >= autoResumeAt &&
+            Math.abs(spinVel) < 0.0015 &&
+            !settling &&
+            params.autoSpeed !== 0;
 
-        // How far off the nearest slot the ring is. Zero while snap is off,
-        // which leaves the parking test below reading as it always did.
-        let off = 0;
+          if (autoRunning) {
+            spinVel = 0;
+            state.spin += params.autoSpeed * dt;
+          } else {
+            state.spin += spinVel * dt;
+            spinVel *= Math.pow(params.damping, dt * 60);
 
-        if (params.snap) {
-          const slot = TAU / Math.round(params.count);
-          // Rate the damping alone bleeds velocity off at, in 1/s. What is
-          // left to coast is exactly v / this.
-          const decay = Math.max(0.01, -Math.log(params.damping) * 60);
+            let off = 0;
+            if (params.snap) {
+              const slot = TAU / Math.round(params.count);
+              const decay = Math.max(0.01, -Math.log(params.damping) * 60);
+              const engage = Math.max(params.snapFrom, decay * slot * 0.5);
+              const rate = 4.8 / Math.max(0.05, params.snapTime);
 
-          // A flick is left alone until it is nearly spent, and this is what
-          // counts as nearly. Never lower than the speed that leaves half a
-          // slot of coast: above that the slot it is heading for is still in
-          // front of it, so the run-in can only carry on forward. Later than
-          // that and it has to back up, which is the one thing that looks
-          // wrong.
-          const engage = Math.max(params.snapFrom, decay * slot * 0.5);
-          // Half a slot down to a pixel is about 4.8 e-foldings, which is what
-          // lets snapTime read back as seconds.
-          const rate = 4.8 / Math.max(0.05, params.snapTime);
+              if (!settling && Math.abs(spinVel) < engage) {
+                const coast = state.spin + spinVel / decay;
+                const phase = params.seed * DEG - frontAngle;
+                snapTo = Math.round((coast + phase) / slot) * slot - phase;
+                snapCap = Math.max(Math.abs(spinVel), slot * 0.5 * rate);
+                settling = true;
+              }
 
-          if (!settling && Math.abs(spinVel) < engage) {
-            // Committed from where the coast alone would have left it, so it
-            // carries on to the slot it was already heading for rather than
-            // pulling up short. Measured off the seed and off wherever front
-            // ended up, so a plane lands facing the viewer.
-            const coast = state.spin + spinVel / decay;
-            const phase = params.seed * DEG - frontAngle;
-            snapTo = Math.round((coast + phase) / slot) * slot - phase;
-            // Never quicker than it was already going, so the run-in can only
-            // slow the ring down. Floored at what the worst case it can be
-            // handed needs, or committing from a standstill caps itself at
-            // zero and never moves.
-            snapCap = Math.max(Math.abs(spinVel), slot * 0.5 * rate);
-            settling = true;
+              if (settling) {
+                off = snapTo - state.spin;
+                const aim = Math.max(-snapCap, Math.min(snapCap, off * rate));
+                spinVel += (aim - spinVel) * clamp01(rate * dt);
+              }
+            } else {
+              settling = false;
+            }
+
+            if (Math.abs(spinVel) < 0.0015 && Math.abs(off) < 0.0008) {
+              spinVel = 0;
+              state.spin += off;
+              settling = false;
+            }
           }
-
-          if (settling) {
-            off = snapTo - state.spin;
-            // Speed proportional to what is left: the ring runs in on an
-            // exponential and stops dead on the slot. Tying speed to distance
-            // is what makes overshoot impossible, and overshoot would read as
-            // a click rather than a glide.
-            const aim = Math.max(-snapCap, Math.min(snapCap, off * rate));
-            spinVel += (aim - spinVel) * clamp01(rate * dt);
-          }
-        } else {
-          settling = false;
         }
 
-        // Parked. Left running, the last hundredth of a degree creeps on for
-        // ever, so put it down exactly on the slot.
-        if (Math.abs(spinVel) < 0.0015 && Math.abs(off) < 0.0008) {
-          spinVel = 0;
-          state.spin += off;
+        tickLoader(dt);
+        updatePointer(dt);
+        layout(dt);
+
+        if (interactive && shown >= 0 && shown !== announced) {
+          announced = shown;
+          setCurrent(shown);
+          const project = projects[shown];
+          if (liveRef.current && project) {
+            liveRef.current.textContent = `${project.name}，Pinterest 参考灵感。`;
+          }
         }
-      }
 
-      tickLoader(dt);
-      updatePointer(dt);
-      layout(dt);
-
-      // The name arrives with the card, not while one flicks past. A pick
-      // drives spin by tween, so spinVel is zero throughout — without that
-      // test the meta would morph as the ring passed the halfway mark.
-      if (
-        interactive &&
-        !dragging &&
-        !picking &&
-        spinVel === 0 &&
-        shown >= 0 &&
-        shown !== announced
-      ) {
-        announced = shown;
-        meta.show(shown);
-      }
-
-      renderer.render(scene, camera);
-    });
+        renderer.render(scene, camera);
+        // #region debug-point A:entry-samples
+        if (
+          process.env.NODE_ENV === "development" &&
+          window.__transitionDebug &&
+          debugEntrySample < 3 &&
+          state.spread >= 0.3 + debugEntrySample * 0.3
+        ) {
+          debugEntrySample++;
+          fetch("http://127.0.0.1:7777/event", {
+            method: "POST",
+            body: JSON.stringify({
+              sessionId: "liquid-transitions",
+              runId: window.__transitionDebug,
+              hypothesisId: "A",
+              location: "Carousel:entry",
+              msg: "[DEBUG] entry uniforms",
+              data: {
+                spread: state.spread,
+                size: uniforms.uSize.value.toArray(),
+                blend: uniforms.uBlend.value,
+                goo: uniforms.uK.value,
+                scale: uniforms.uScale.value.map((v) => v.toArray()),
+                pos: uniforms.uPos.value.map((v) => v.toArray()),
+              },
+              ts: Date.now(),
+            }),
+          }).catch(() => {});
+        }
+        // #endregion
+      },
+      undefined,
+      container,
+      () => renderer.render(scene, camera),
+      true,
+    );
 
     return () => {
       disposed = true;
       clearTimeout(holdTimer);
       clearTimeout(fontFallback);
-      renderer.setAnimationLoop(null);
+      stopRendering();
+      controlsRef.current = null;
+      gsap.killTweensOf(wheelView);
 
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
       container.removeEventListener("wheel", onWheel);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
@@ -1421,17 +1679,16 @@ export default function Carousel() {
       tl?.kill();
       gsap.killTweensOf(splitText.chars);
       gsap.killTweensOf(splitText.fades);
-      gsap.killTweensOf(listEl);
-      meta.dispose();
-      tag.dispose();
       splitText.dispose();
       gui?.destroy();
 
       mesh.geometry.dispose();
       mesh.material.dispose();
-      uniforms.uAtlas.value?.dispose();
+      atlas.dispose();
       uniforms.uAsciiTex.value?.dispose();
-      uniforms.uTagTex.value?.dispose();
+      delete container.dataset.cursorActive;
+      delete container.dataset.glassCursor;
+      delete container.dataset.cursorRendered;
 
       // dispose() frees GL resources but leaves the context itself alive until
       // the canvas is collected, which is not deterministic. This effect
@@ -1442,144 +1699,63 @@ export default function Carousel() {
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, []);
+  }, [projects, initialIndex, instant]);
+
+  const selectFromIndex = (index) => {
+    const localIndex = index - deckStart;
+    if (localIndex >= 0 && localIndex < projects.length) {
+      controlsRef.current?.pickProject(localIndex);
+      return;
+    }
+    onSelectProject(index);
+  };
+  const openShelf = () => onExplore?.(controlsRef.current?.shelfPreviews());
 
   return (
     <>
+      <InspirationControls
+        ready={ready}
+        wheelOpen={wheelOpen}
+        onWheelToggle={() => controlsRef.current?.toggleWheel()}
+        total={allProjects.length}
+        projects={allProjects}
+        currentIndex={deckStart + current}
+        ringStart={deckStart}
+        ringCount={projects.length}
+        board={board}
+        switchingBoard={switchingBoard}
+        syncingBoard={syncingBoard}
+        onSelectBoard={onSelectBoard}
+        onSyncBoard={onSyncBoard}
+        onSelectProject={selectFromIndex}
+        onExplore={openShelf}
+      />
       {/* touch-none, or the browser claims the gesture for panning and the
           pointermove stream dies mid-drag. Nothing here scrolls — the swipe
           is the carousel. */}
-      <div ref={containerRef} className="fixed inset-0 touch-none" />
-
-      {/* Never takes the pointer: the canvas underneath handles the wheel and
-          the drag, and the column has no business interrupting a throw that
-          happens to pass under it. Sized from styleMeta, not a class, so it
-          takes the narrow bump with every other label. */}
-      <ul
-        ref={listRef}
-        aria-label="Projects"
-        style={{
-          fontFamily: '"Satoshi", ui-sans-serif, system-ui, sans-serif',
-        }}
-        className="pointer-events-none fixed right-[12vw] top-[2.4vh] z-10 flex flex-col items-start text-right leading-[1.4] tracking-[0.01em] text-[#0a0a0a] opacity-0 max-sm:hidden"
-      >
-        {PROJECTS.map((p, i) => (
-          <li
-            key={p.file}
-            ref={(el) => {
-              itemsRef.current[i] = el;
-            }}
-            // No transition, deliberately: the colour turns over the moment
-            // the ring passes the halfway point between two slots.
-            style={{ opacity: 0.2 }}
-          >
-            {p.name}
-          </li>
-        ))}
-      </ul>
-
-      {/* Three rows per side, identical in structure and all carrying both
-          words: two inside the filtered wrapper that melt into each other, and
-          one outside it for words carrying over unchanged. Which row paints
-          what is decided per change — see ring/meta.js.
-
-          Hidden from the accessibility tree; a card is announced once, in
-          full, from the live region below. */}
-      {[
-        { side: "left", justify: "flex-start" },
-        { side: "right", justify: "flex-end" },
-      ].map(({ side, justify }) => {
-        // Baseline, not centre: the halves are set at different sizes, and a
-        // shared baseline is what makes them read as one lockup.
-        const row = (
-          <span className="flex items-baseline whitespace-nowrap">
-            <span />
-            <span />
-          </span>
-        );
-        return (
-          <div
-            key={side}
-            ref={(el) => {
-              metaRef.current[side].box = el;
-            }}
-            aria-hidden="true"
-            className="pointer-events-none fixed top-1/2 z-10 -translate-y-1/2 tracking-[-0.01em] text-[#0a0a0a]"
-          >
-            <span
-              ref={(el) => {
-                metaRef.current[side].goo = el;
-              }}
-              className="absolute inset-0"
-              // Promoted up front, so switching the goo on and off is not also
-              // a compositor layer being created and thrown away.
-              style={{ willChange: "filter" }}
-            >
-              {[0, 1].map((i) => (
-                <span
-                  key={i}
-                  ref={(el) => {
-                    metaRef.current[side].layers[i] = el;
-                  }}
-                  className="absolute inset-0 flex items-center"
-                  style={{ justifyContent: justify }}
-                >
-                  {row}
-                </span>
-              ))}
-            </span>
-            <span
-              ref={(el) => {
-                metaRef.current[side].plain = el;
-              }}
-              className="absolute inset-0 flex items-center"
-              style={{ justifyContent: justify }}
-            >
-              {row}
-            </span>
-          </div>
-        );
-      })}
-
-      {/* 001 to 100. Holds the entry at the seed until it gets there. */}
       <div
-        ref={loaderRef}
-        aria-hidden="true"
-        className="pointer-events-none fixed left-1/2 z-10 -translate-x-1/2 tracking-[-0.01em] text-[#0a0a0a]"
+        ref={containerRef}
+        className="carousel-stage fixed inset-0 touch-none"
       />
 
-      <div ref={liveRef} aria-live="polite" className="sr-only" />
-
-      {/* Alpha multiplied up hard and biased down, so a pixel is either fully
-          opaque or gone. That is what fuses two blurred words into one
-          silhouette instead of laying them over each other. Region is
-          oversized because the blur bleeds well outside the text's own box. */}
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute h-0 w-0"
-        focusable="false"
+      <button
+        ref={titleRef}
+        type="button"
+        className={`home-lockup ${ready ? "is-visible" : ""}`}
+        onClick={openShelf}
+        disabled={!ready}
+        aria-label="打开灵感册"
+        aria-hidden={!ready}
       >
-        <defs>
-          <filter
-            id="name-goo"
-            x="-20%"
-            y="-100%"
-            width="140%"
-            height="300%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feColorMatrix
-              ref={cutRef}
-              in="SourceGraphic"
-              type="matrix"
-              values="1 0 0 0 0
-                      0 1 0 0 0
-                      0 0 1 0 0
-                      0 0 0 255 -140"
-            />
-          </filter>
-        </defs>
-      </svg>
+        <MotionText visible={ready}>JUST INSPIRATION.</MotionText>
+      </button>
+
+      <div
+        ref={liveRef}
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      />
     </>
   );
 }
