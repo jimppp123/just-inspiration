@@ -16,25 +16,25 @@ ICE WORKS 将后数字极简主义、编辑式排版和有机交互组合为三�
 
 图片在同一个 WebGL 场中循环、弯曲并相互拉丝，可通过滚轮、拖拽、触屏和方向键切换。
 
-![首页液态画廊与边缘玻璃折射](docs/preview-home.jpg)
+![首页液态画廊与边缘玻璃折射](docs/preview-home.gif)
 
 ### 画板切换
 
 玻璃菜单用于切换、添加或打开 Pinterest 公开画板。
 
-![悬浮于画廊上方的画板切换菜单](docs/preview-board-menu.jpg)
+![悬浮于画廊上方的画板切换菜单](docs/preview-board-menu.gif)
 
 ### 灵感墙
 
 完整收藏按原始纵横比组成高密度瀑布流，静态图片保留液态悬停与边缘折射。
 
-![保持原始图片比例的瀑布流灵感墙](docs/preview-shelf.jpg)
+![保持原始图片比例的瀑布流灵感墙](docs/preview-shelf.gif)
 
 ### 液态裂变
 
 点击中心图片可逐张展开关联灵感，继续点击分支即可沿 Pinterest 推荐流探索。
 
-![由中心图片裂变出的关联灵感](docs/preview-focus.jpg)
+![由中心图片裂变出的关联灵感](docs/preview-focus.gif)
 
 ## Pinterest 画板
 
